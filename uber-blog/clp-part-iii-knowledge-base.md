@@ -16,7 +16,7 @@ This document is intentionally more detailed than the article. The draft should 
 - CLP reduces that monthly volume to approximately **750–850 TB**:
   - Roughly **29–33× compression**
   - Approximately **97% less stored volume**
-- Five 48-core Presto Native workers serve the current warm/cold query workload directly from object storage.
+- Five 48-core Presto Native workers serve recent and older data through searchable KV-IR files and immutable CLP archives directly from object storage.
 - Worker CPU utilization is typically approximately **5–10%**.
 - The objective is responsive user latency with minimal use of shared infrastructure, not maximum throughput.
 - Uber intentionally paces object-storage API use; low CPU does not imply a need to increase scan throughput.
@@ -39,7 +39,7 @@ This document is intentionally more detailed than the article. The draft should 
 - Current OSS already supports end-to-end Presto querying, including mixed KV-IR/archive queries, typed exact-path access, filter/projection pushdown, typed wildcard value search, complete-event JSON, and pluggable metadata/split filtering.
 - Uber production adds advanced metadata planning, billion-file scale, early termination, routing, reliability, and operational controls.
 - CLP's low incremental storage cost enables flexible tier management: offboarding from Pinot, selective rehydration, and dual ingest where appropriate.
-- The Kafka-fed hot tier can experience rare loss during extreme overloads; the described warm/cold path does not share that peak-loss mode.
+- The Kafka-fed hot/indexed path can experience rare loss during extreme overloads; the CLP-backed object-storage path does not share that peak-loss mode.
 - Extreme bursts often consist of loop-generated repetition. Higher repetition increases CLP's compression ratio, so raw-volume spikes need not produce proportional object-storage traffic; the object-storage path also retains throughput headroom.
 - Archive schemas, log-format patterns, frequencies, and related metadata create a future path toward compact LLM context preloading, semantic search, and summarization, but this is not presented as deployed or benchmarked behavior.
 
@@ -62,7 +62,7 @@ The article answers one question:
 The causal answer is:
 
 1. Uber's logs span natural-language messages, enriched events, and polymorphic JSON controlled by independently deployed producers.
-2. Uber preserves one SQL entry point while routing hot access to Pinot and warm/cold access to Presto Native with CLP.
+2. Uber preserves one SQL entry point while routing between Pinot's indexed path and Presto Native with CLP's searchable KV-IR/archive path.
 3. Fresh logs remain searchable in KV-IR while asynchronous aggregation produces immutable archives.
 4. Current OSS can query a mix of both formats; Uber removes overlapping KV-IR inputs once their archived copy is authoritative.
 5. CLP columnizes observed structure within archive-local, schema-homogeneous tables.
@@ -205,10 +205,11 @@ Research reference: [μSlope: High Compression and Fast Search on Semi-Structure
 
 Use QueryRunner attribution carefully. It participates in parsing, governance, routing, cluster selection, and failover, but responsibilities may span related services.
 
-### Storage tiers
+### Routed serving paths
 
-- **Pinot:** indexed, random-access hot tier
-- **Presto Native with CLP:** warm/cold access over KV-IR and immutable archives in object storage
+- **Pinot:** indexed, random-access path, commonly used when that access pattern is justified
+- **Presto Native with CLP:** searchable KV-IR and immutable-archive path in object storage, serving recent and older data
+- These paths have different strengths, not exclusive temperature ownership. Recently produced data is searchable through KV-IR, and selectively dual-ingested data can be available through both.
 - Users retain one SQL-oriented experience rather than choosing a storage engine directly.
 
 ### Worker, connector, and reader ownership
@@ -223,15 +224,15 @@ Use QueryRunner attribution carefully. It participates in parsing, governance, r
 
 These are Uber production tier-management choices, not automatic current-OSS policies:
 
-- Data that no longer justifies Pinot indexing can be offboarded to warm/cold CLP while remaining searchable.
+- Data that no longer justifies Pinot indexing can be offboarded to CLP object-storage access while remaining searchable.
 - Selected data can later be **rehydrated** into Pinot if repeated low-latency access again justifies hot indexing.
-- Selected streams can be dual-ingested when immediate hot access and durable warm/cold access are both required.
+- Selected streams can be dual-ingested when indexed random access and durable CLP access are both required.
 - CLP's low incremental storage cost makes selective dual ingest practical.
 
 ### Peak-volume resilience
 
-- The hot tier is fed through Kafka and can experience rare log loss during extreme overloads.
-- The described warm/cold path does not share this peak-loss mode.
+- The hot/indexed path is fed through Kafka and can experience rare log loss during extreme overloads.
+- The CLP-backed object-storage path does not share this peak-loss mode.
 - Extreme log bursts often come from loop-generated repetition.
 - Increased repetition raises CLP's compression ratio.
 - Therefore, a large spike in logical/raw volume need not create a proportional rise in compressed object-storage traffic.
@@ -300,7 +301,7 @@ The goal is not merely to make Presto accept JSON. It is to carry log-query inte
 - Each schema node becomes an encoded column within that ERT.
 - One archive contains many ERTs behind one archive-local schema tree.
 - This avoids one dataset-wide sparse union and does not require a promotion list chosen before ingestion.
-- One logical path may map to multiple columns across ERTs or type variants.
+- One logical path may map to multiple encoded columns across tables within one archive or across archives, including typed variants.
 
 ### Intrinsic columnization
 
@@ -614,8 +615,8 @@ Future directions are architectural possibilities, not product commitments.
 
 ### Burst behavior
 
-- Rare hot-tier losses occur only under extreme overload conditions in the described deployment.
-- Warm/cold retention does not share that failure mode.
+- Rare hot/indexed-path losses occur only under extreme overload conditions in the described deployment.
+- CLP-backed object-storage retention does not share that failure mode.
 - Loop-generated bursts contain unusually high repetition.
 - Compression ratio can rise during those bursts.
 - Distinguish logical raw volume from compressed object-storage traffic.
@@ -717,6 +718,7 @@ Do not revisit semantic search in the conclusion. The article must end on the pr
 - Early termination is Uber production behavior, not current OSS.
 - Mixed KV-IR/archive queries are current OSS.
 - Offboarding, rehydration, dual ingest, and overlap precedence are Uber tier-management policies.
+- Pinot and CLP are routed paths with different strengths, not exclusive hot versus warm/cold owners.
 
 ### Claim strength
 
@@ -745,7 +747,7 @@ Do not revisit semantic search in the conclusion. The article must end on the pr
 - Confirm the measurement window for 25 PB/month and 750–850 TB/month.
 - Confirm 5–10% remains the approved description of typical worker CPU.
 - Confirm 30-second-to-few-minute freshness remains current.
-- Confirm publishable wording for rare hot-tier loss and warm/cold peak resilience.
+- Confirm publishable wording for rare hot/indexed-path loss and CLP-backed peak resilience.
 - Confirm publishable wording for object-storage throughput headroom.
 - Confirm offboarding, selective rehydration, and dual-ingest wording.
 - Verify the exact public function/path syntax for the release used in the example.
@@ -797,4 +799,4 @@ Do not revisit semantic search in the conclusion. The article must end on the pr
 
 ## 19. Working Abstract
 
-Uber and YScope expanded CLP from its original Spark deployment to machine-learning, streaming, and data platforms that collectively generate approximately 25 PB of raw logs per month. Fresh logs remain searchable in KV-IR files before asynchronous aggregation into immutable CLP archives, and one open-source connector query can span both formats without duplicate events. Within each archive, CLP groups recurring key-and-type schemas into encoded tables and columnizes every schema node. The Presto Native connector rewrites supported SQL expressions, resolves paths against split-local structure, and pushes filtering and projection into CLP's encoded execution. Metadata pruning and Uber's planning-time early termination avoid files and splits before object-storage reads begin. In production, CLP reduces the monthly raw volume to approximately 750–850 TB, while five lightly utilized Presto Native workers serve the warm/cold workload directly from object storage without local staging or an archive cache.
+Uber and YScope expanded CLP from its original Spark deployment to machine-learning, streaming, and data platforms that collectively generate approximately 25 PB of raw logs per month. Fresh logs remain searchable in KV-IR files before asynchronous aggregation into immutable CLP archives, and one open-source connector query can span both formats without duplicate events. Within each archive, CLP groups recurring key-and-type schemas into encoded tables and columnizes every schema node. The Presto Native connector rewrites supported SQL expressions, resolves paths against split-local structure, and pushes filtering and projection into CLP's encoded execution. Metadata pruning and Uber's planning-time early termination avoid files and splits before object-storage reads begin. In production, CLP reduces the monthly raw volume to approximately 750–850 TB, while five lightly utilized Presto Native workers serve recent and older data through searchable KV-IR files and immutable archives directly from object storage without local staging or an archive cache.

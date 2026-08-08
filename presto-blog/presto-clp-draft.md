@@ -100,28 +100,28 @@ CLP's wildcard operations remain complementary. Current functions search values 
 
 ## A Native Storage Engine Behind a Presto Catalog
 
-[Presto Native, documented as Presto C++](https://prestodb.io/docs/current/presto-cpp.html), replaces Java workers with native workers while retaining the Java coordinator. In [Presto's data-source model](https://prestodb.io/docs/current/overview/concepts.html), a connector adapts a source to catalogs, schemas, tables, and splits. CLP keeps those concepts familiar: a metadata provider discovers archives, an optional convenience schema exposes common fields, and archive splits provide parallelism. Split-local structure remains authoritative for the long tail, so the catalog need not union every observed field.
+[Presto Native, documented as Presto C++](https://prestodb.io/docs/current/presto-cpp.html), replaces Java workers with native workers while retaining the Java coordinator. In [Presto's data-source model](https://prestodb.io/docs/current/overview/concepts.html), a connector adapts a source to catalogs, schemas, tables, and splits. CLP keeps those concepts familiar: a metadata provider discovers searchable KV-IR files and immutable archives, an optional convenience schema exposes common fields, and splits provide parallelism. The current connector can query either format, including a mixed split set. For immutable archive splits—the detailed path described here—split-local structure remains authoritative for the long tail, so the catalog need not union every observed field.
 
 ~~~mermaid
 flowchart TB
     client["SQL client"]
     coordinator["Java coordinator<br/>Plan queries · create splits"]
-    metadata["CLP metadata provider<br/>Archives · bounds · statistics"]
+    metadata["CLP metadata provider<br/>Splits · bounds · statistics"]
     workers["Presto Native workers"]
     plugin["CLP connector and shared library"]
-    archives["CLP archives<br/>Schema trees · ERT columns · logtypes"]
+    storage["CLP storage<br/>Searchable KV-IR · immutable archives"]
 
     client --> coordinator
     coordinator <--> metadata
     coordinator --> workers
     workers --> plugin
-    plugin --> archives
+    plugin --> storage
     plugin --> workers
     workers --> coordinator
     coordinator --> client
 ~~~
 
-The Java coordinator plans queries and serializes connector-specific scan information. Each native worker loads the connector plugin, which links CLP as a shared library running in the worker process. CLP scans encoded columns and returns columnar batches. This avoids a separate service call, a per-record language bridge, and raw-event materialization before search. The boundary does not require CLP to remain implemented in one language.
+The Java coordinator plans queries and serializes connector-specific scan information. Each native worker loads the connector plugin, which links CLP as a shared library running in the worker process. For archive splits, CLP scans encoded columns and returns columnar batches. This avoids a separate service call, a per-record language bridge, and raw-event materialization before search. The boundary does not require CLP to remain implemented in one language.
 
 Building this external connector exposed missing pieces in Presto Native's plugin path. [PR #27653](https://github.com/prestodb/presto/pull/27653) enabled connector factories from dynamically loaded native code; [PR #27652](https://github.com/prestodb/presto/pull/27652) routed connector-specific serialized values to native workers.
 
@@ -131,11 +131,11 @@ YScope engineers led the connector implementation. IBM engineers and the Presto 
 
 ## Avoid Work at Every Layer
 
-At petabyte scale, performance comes from eliminating work before decoding values:
+For immutable archive splits, performance comes from eliminating work before decoding values:
 
 1. **Metadata planning** uses time bounds, indexed fields, and statistics to avoid irrelevant archives.
 2. **Schema resolution** removes ERTs and columns that cannot contain the requested path or type; dictionaries can reject some string predicates.
-3. **Encoded execution** scans the remaining columns and reconstructs only requested values or complete matching events.
+3. **Encoded execution** scans the remaining columns and reconstructs only requested values or matching events.
 
 > Metadata determines what not to read; CLP makes what remains inexpensive to search.
 
@@ -156,7 +156,7 @@ Treat serialized plan objects—called connector handles—as a versioned protoc
 
 ## Open Source, Production Scale, and What Comes Next
 
-The open-source connector works end to end today, including typed schema-less access, filter and projection pushdown, wildcard value search, whole-event JSON, and pluggable metadata filtering.
+The open-source connector works end to end today over searchable KV-IR files and immutable CLP archives, including mixed queries across both formats, typed schema-less access, filter and projection pushdown, wildcard value search, whole-event JSON, and pluggable metadata filtering.
 
 At Uber, onboarded workloads produce approximately 25 PB of raw logs per month, compressed to roughly 750–850 TB depending on workload mix—a 29–33× reduction. Five 48-core Presto Native workers serve recent and older data directly from object storage. Advanced metadata planning, early termination, and billion-file metadata scale are Uber extensions, not current public features.
 

@@ -48,7 +48,7 @@ The article answers one production question:
 The answer is causal rather than a list of platform features:
 
 1. Uber's logs span natural-language messages, enriched events, and polymorphic JSON whose producers evolve independently.
-2. Uber preserves one SQL entry point while routing hot data to Pinot and warm/cold data to Presto Native with CLP.
+2. Uber preserves one SQL entry point while routing between Pinot's indexed path and Presto Native with CLP's searchable KV-IR/archive path.
 3. Fresh logs remain searchable in streaming-capable KV-IR files while asynchronous aggregation creates immutable CLP archives; one current-OSS query can span a mix of both formats, while metadata removes overlapping inputs so results are never duplicated.
 4. CLP discovers and columnizes observed structure; the connector carries log-specific SQL intent through planning and pushdown into that storage model.
 5. Metadata pruning and planning-time early termination avoid files and splits before execution.
@@ -66,7 +66,7 @@ Assume the companion Presto article publishes first. Link it as **[PRESTO_BLOG_U
 | Opening | How can five workers serve this scale? | Create a concrete production mystery | Readers see the outcome before learning the machinery | Establishes scale, cost discipline, and the two-part answer: avoid work, then search encoded data |
 | 1. Data spectrum | What makes Uber's logs difficult? | Replace the false structured/unstructured binary with the actual workload | Platform engineers recognize schema ownership, polymorphism, and adoption constraints | Defines the data properties the query system must preserve |
 | 2. SQL tension | Why not use fixed columns or one JSON string? | Explain why ordinary table modeling loses either flexibility or execution efficiency | Readers understand why the problem is not solved by syntax alone | Creates the need for storage-aware schema-less SQL |
-| 3. Query architecture | Where does CLP sit in Uber's logging stack? | Place the solution inside the hot/warm/cold system and common query entry point | Readers understand routing, tier ownership, freshness, and object-storage flow | Connects the user experience to the physical serving architecture |
+| 3. Query architecture | Where does CLP sit in Uber's logging stack? | Place the solution inside the routed serving system and common query entry point | Readers understand path strengths, nonexclusive ownership, freshness, and object-storage flow | Connects the user experience to the physical serving architecture |
 | 4. Native schema-less SQL | How does a SQL expression reach CLP's encoded columns? | Prove that the SQL surface preserves rather than hides CLP execution | Readers can follow one query from typed accessors through pushdown to the reader | Supplies the central technical mechanism |
 | 5. Work avoidance | Why is the compute footprint so small? | Explain scale through specific elimination stages | Operators see what metadata, early termination, and streaming execution prevent | Resolves the opening mystery |
 | 6. Production and OSS | What is proven, and what can readers use? | Separate deployed evidence from public functionality and future work | Readers can evaluate maturity without conflating Uber extensions with OSS | Converts architecture into credibility and adoption value |
@@ -211,13 +211,13 @@ Explain why a conventional table schema or one JSON string cannot deliver both f
 
 ### Editorial necessity
 
-Place CLP inside the system users actually experience. The article should show that SQL clients do not choose a storage engine and that warm/cold access is not synonymous with offline or staged access.
+Place CLP inside the system users actually experience. The article should show that SQL clients do not choose a storage engine and that CLP-backed access is not synonymous with offline or staged access.
 
 ### Presentation strategy
 
 - Use one diagram to connect clients, QueryRunner, Pinot, Presto Native workers, the in-process CLP connector, and object storage.
-- Explain hot versus warm/cold responsibilities in one paragraph.
-- Follow the warm/cold branch far enough to establish the worker/connector/reader ownership chain.
+- Explain the two routed paths' different strengths without presenting temperature ownership as exclusive.
+- Follow the CLP branch far enough to establish the worker/connector/reader ownership chain.
 - Close with freshness and publication-cadence tradeoffs.
 
 ### Figure 1: Uber log-query architecture
@@ -230,8 +230,8 @@ Observability UI       Platform Query Builder       Programmatic Clients
                               |
                 +-------------+-------------+
                 |                           |
-          Pinot: hot logs        Presto Native workers
-          indexed access       in-process CLP connector
+              Pinot             Presto Native workers
+       indexed random access   in-process CLP connector
                 |                           |
           streaming data          metadata-coordinated
                                    mixed split planning
@@ -244,7 +244,8 @@ Observability UI       Platform Query Builder       Programmatic Clients
 ### Required content
 
 - QueryRunner preserves one SQL entry point and chooses the backend.
-- Pinot serves indexed low-latency hot access; Presto Native with CLP serves warm/cold data from object storage.
+- Pinot provides indexed random access; Presto Native with CLP searches recent and older KV-IR/archive data from object storage.
+- Routing is not an exclusive temperature boundary. Recently produced data is searchable through KV-IR, and selectively dual-ingested data can be available through both paths.
 - Each Presto Native worker supplies compute and hosts the connector in-process. For archive splits, the connector opens the object-storage byte stream; CLP's streaming archive reader interprets and searches it as bytes arrive.
 - There is no local archive cache or disk staging in the described Uber query path.
 - Present KV-IR as an advancement of the streaming CLP file introduced in Part I, extending that low-buffering design to semi-structured logs.
@@ -253,8 +254,8 @@ Observability UI       Platform Query Builder       Programmatic Clients
 - During overlapping coverage, Uber metadata and query planning prioritize the archived representation and exclude incorporated KV-IR inputs. Nonoverlapping files from both formats may contribute to the same result, but each event appears once.
 - Current freshness through the KV-IR path is approximately 30 seconds to a few minutes.
 - Explain the aggregation tradeoff among compression, freshness, and object-storage request cost.
-- **Uber production:** Data that no longer justifies hot Pinot indexing can be offboarded to warm/cold CLP while remaining searchable. Selected data can later be “rehydrated” into Pinot when repeated low-latency access is again necessary.
-- Note that CLP's low incremental storage cost makes selective dual ingest practical for workloads that need immediate hot access and durable warm/cold access at the same time.
+- **Uber production:** Data that no longer justifies Pinot indexing can be offboarded to CLP object-storage access while remaining searchable. Selected data can later be “rehydrated” into Pinot when repeated low-latency access is again necessary.
+- Note that CLP's low incremental storage cost makes selective dual ingest practical for workloads that need indexed random access and durable CLP access at the same time.
 - Keep Pinot reuse of CLP ideas and implementation components to one clause; the indexing details remain out of scope.
 
 ### Audience benefit and story contribution
@@ -290,7 +291,7 @@ Move from storage model to user syntax to execution:
 - A CLP archive contains an archive-level schema tree and many schema-homogeneous encoded tables.
 - Records with the same keys and value types share a table; every schema node is columnized within that table.
 - This avoids one global sparse union and does not require users to predict a promotion list before ingestion.
-- One logical path may bind to several typed columns across schemas.
+- One logical path may bind to several encoded columns across schema-specific tables within or across archives.
 - CLP also separates recurring text patterns from typed variables inside string values; mention this briefly rather than re-explaining the compression algorithm from Parts I and II.
 - Do not describe the schema tree as one dataset-global structure.
 
@@ -427,11 +428,11 @@ Use an evidence ladder: **approved production figures → current OSS → Uber e
 
 - Approximately 25 PB/month of raw logs from onboarded workloads.
 - Approximately 750–850 TB/month compressed: roughly 29–33× compression and about 97% less storage.
-- Five 48-core Presto Native workers, typically at 5–10% CPU, serving warm/cold queries directly from object storage.
+- Five 48-core Presto Native workers, typically at 5–10% CPU, serving recent and older CLP data directly from object storage.
 - Approximately 30-second-to-few-minute freshness through searchable KV-IR files, followed by asynchronous aggregation into immutable CLP archives.
 - Explain that responsive UX under deliberately paced object-storage access is the success criterion.
-- **Uber production resilience:** The Kafka-fed hot tier can experience rare loss during extreme overloads, while the warm/cold path does not share this peak-loss mode.
-- Explain why peak raw volume does not imply proportional warm/cold traffic: bursts often contain loop-generated repetition, which raises CLP's compression ratio, and the object-storage path retains additional throughput headroom.
+- **Uber production resilience:** The Kafka-fed hot/indexed path can experience rare loss during extreme overloads, while the CLP-backed object-storage path does not share this peak-loss mode.
+- Explain why peak raw volume does not imply proportional CLP-backed object-storage traffic: bursts often contain loop-generated repetition, which raises CLP's compression ratio, and the object-storage path retains additional throughput headroom.
 
 Do not include the current `[TBD]` performance table. Add at most one representative-query measurement only if every value is available, uses one consistent query definition, and distinguishes raw logical scope from compressed physical bytes read.
 
@@ -527,7 +528,8 @@ Remove the incomplete representative-performance table unless a complete, consis
 - Preserve the ownership chain: worker supplies compute; connector runs in-process; CLP streaming reader interprets and searches the byte stream.
 - Distinguish searchable KV-IR files from immutable CLP archives. State that current OSS can query a mix of both formats, and explain that Uber's overlap handling removes only incorporated KV-IR inputs so each event appears once.
 - Describe offboarding, selective rehydration, and dual ingest as Uber tier-management choices, not automatic current-OSS policies.
-- Keep rare hot-tier loss, repetition-driven burst compression, and object-storage throughput headroom scoped to Uber's described deployment.
+- Do not present Pinot as exclusively hot or CLP as exclusively warm/cold; recent data is searchable through KV-IR, and selective dual ingest can make data available through both paths.
+- Keep rare hot/indexed-path loss, repetition-driven burst compression, and object-storage throughput headroom scoped to Uber's described deployment.
 - Distinguish logical column selection from exact physical byte isolation.
 - Distinguish metadata pruning from planning-time early termination.
 - Separate current OSS, Uber production behavior, and future directions at first mention.
@@ -542,7 +544,7 @@ Remove the incomplete representative-performance table unless a complete, consis
 - Reverify the public function names, dot-path syntax, and one-sided wildcard pattern used in the SQL example against the publication release.
 - Which key, regex, message, and cross-field operations are current Uber production behavior versus RFC or future design.
 - Whether the 5–10% CPU range and 30-second-to-few-minute freshness remain current for the stated deployment scope.
-- Final approval for the rare hot-tier loss, warm/cold peak-resilience, loop-burst compression, and object-storage throughput-headroom wording.
+- Final approval for the rare hot/indexed-path loss, CLP-backed peak-resilience, loop-burst compression, and object-storage throughput-headroom wording.
 - Final approval for offboarding, selective rehydration, and dual-ingest wording.
 - Whether one complete representative-query measurement is available; otherwise remove the performance table entirely.
 - Final wording and approval for the double-digit-petabyte partner statement.

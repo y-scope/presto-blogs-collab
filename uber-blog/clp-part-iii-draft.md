@@ -4,7 +4,7 @@
 
 Every month, a growing set of Uber’s machine learning, streaming, and data platforms produces approximately 25 PB of raw logs. CLP compresses this volume to approximately 750–850 TB—a 29–33× reduction—while keeping it directly searchable. This is monthly ingest volume, not the amount scanned by an individual query.
 
-Only five 48-core Presto Native workers serve the current warm and cold workload, typically at 5–10% CPU utilization. They search fresh KV-IR files and immutable CLP archives directly from Uber’s internal object storage, without local-disk staging or an archive cache. Because latency already supports a responsive user experience, we deliberately pace object-storage access to consume the smallest practical share of that common infrastructure instead of maximizing throughput for its own sake.
+Only five 48-core Presto Native workers serve recent and older data through searchable KV-IR files and immutable CLP archives, typically at 5–10% CPU utilization. They search directly from Uber’s internal object storage, without local-disk staging or an archive cache. Because latency already supports a responsive user experience, we deliberately pace object-storage access to consume the smallest practical share of that common infrastructure instead of maximizing throughput for its own sake.
 
 At this scale, however, compression alone does not explain the footprint. The logs range from natural-language messages to deeply nested JSON; their schemas evolve continuously, and one field may contain several types. Metadata planning eliminates unnecessary work, while CLP executes the remaining search against its encoded representation. This article explains how Uber and YScope brought those capabilities into Uber’s SQL-centric query ecosystem.
 
@@ -53,8 +53,8 @@ Observability UI       Platform Query Builder       Programmatic Clients
                               |
                 +-------------+-------------+
                 |                           |
-          Pinot: hot logs           Presto Native + CLP
-          indexed access              warm/cold logs
+              Pinot               Presto Native + CLP
+       indexed random access      streaming/encoded search
                 |                           |
           streaming data          Metadata-coordinated
                                   mixed split planning
@@ -64,11 +64,11 @@ Observability UI       Platform Query Builder       Programmatic Clients
                                       object storage
 ```
 
-**Figure 1: High-level log query architecture. Shared infrastructure routes SQL to Pinot for hot data or to Presto Native and CLP for warm and cold data.**
+**Figure 1: High-level log query architecture. Shared infrastructure routes SQL to Pinot for indexed random access or to Presto Native and CLP for searchable KV-IR and archive data.**
 
-Pinot provides indexed, random access for hot logs. Presto Native and CLP serve warm and cold logs from Uber’s internal object storage. Each worker supplies compute and hosts the connector in-process. The open-source connector can execute one query over a mix of KV-IR and archive splits; for archive splits, CLP’s streaming reader searches bytes as they arrive without local staging or caching. Users keep the same tools instead of choosing storage engines themselves.
+Pinot provides indexed, random access. Presto Native and CLP search recent and older KV-IR/archive data from Uber’s internal object storage. Routing is not a strict temperature boundary; dual-ingested data can be available through both. Each worker hosts the connector in-process. For archive splits, CLP’s streaming reader searches bytes as they arrive without local staging or caching. Users keep the same tools.
 
-“Warm and cold” does not mean waiting for archive creation. [KV-IR](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) advances the streaming CLP file introduced in Part I, extending its low-buffering design to semi-structured logs. Logs first land in searchable KV-IR files. Asynchronous jobs later aggregate them into immutable CLP archives for longer-term storage and search.
+CLP-backed access does not mean waiting for archive creation. [KV-IR](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) advances the streaming CLP file introduced in Part I, extending its low-buffering design to semi-structured logs. Logs first land in searchable KV-IR files. Asynchronous jobs later aggregate them into immutable CLP archives for longer-term storage and search.
 
 A query can span any mix of KV-IR files and archives needed for its time range. Where the formats overlap during aggregation, Uber’s metadata and query engine prioritize the archived copy and exclude the incorporated KV-IR input. Both formats can contribute to one result, but each event appears only once. New events generally become searchable within approximately 30 seconds to a few minutes.
 
@@ -78,7 +78,7 @@ The Pinot hot tier reuses CLP ideas, and tiering remains flexible. Data that no 
 
 YScope and Uber engineers developed and productionized the Presto Native CLP connector, combining CLP’s schema discovery and encoded search with Presto’s distributed execution.
 
-Each CLP archive—also the basis of a Presto split—contains an archive-local schema tree and many schema-homogeneous encoded tables. Records with the same keys and value types share a table, and every schema node becomes an encoded column within it. This intrinsic columnization avoids a dataset-wide sparse union and the need to choose fields before ingestion. The same logical path can bind to several columns when schemas or types differ across archives.
+Each CLP archive—also the basis of a Presto split—contains an archive-local schema tree and many schema-homogeneous encoded tables. Records with the same keys and value types share a table, and every schema node becomes an encoded column within it. This intrinsic columnization avoids a dataset-wide sparse union and the need to choose fields before ingestion. The same logical path can bind to several encoded columns across tables within or across archives.
 
 An optional convenience schema exposes selected path-and-type bindings as ordinary SQL columns after archives are written. Changing it remaps logical names to existing encoded columns without rewriting data; paths outside that view remain available through schema-less accessors. CLP also separates recurring text patterns from typed variables inside strings, preserving the message-oriented compression described in Parts I and II.
 
@@ -167,11 +167,11 @@ Together, these techniques let workers search encoded files without a secondary 
 
 For currently onboarded workloads, the platforms integrated with CLP generate approximately 25 PB of raw logs per month. Their compressed footprint fluctuates between 750 and 850 TB, corresponding to 29–33× compression and approximately 97% less storage.
 
-Five 48-core Presto Native workers serve the current warm and cold workload directly from object storage. Typical CPU utilization is 5–10%, and latency already supports a responsive user experience. We deliberately pace object-storage access, consuming the smallest practical share of this common service rather than pursuing throughput that would not materially improve the experience.
+Five 48-core Presto Native workers serve recent and older CLP data directly from object storage. Typical CPU utilization is 5–10%, and latency already supports a responsive user experience. We deliberately pace object-storage access, consuming the smallest practical share of this common service rather than pursuing throughput that would not materially improve the experience.
 
 Searchable KV-IR files make new events available in approximately 30 seconds to a few minutes, while asynchronous aggregation produces immutable archives for longer-term access.
 
-The Kafka-fed hot tier can experience rare loss during extreme overloads; the warm/cold path does not share this peak-loss mode. Such bursts often come from logs printed in loops. Their repetition raises CLP’s compression ratio, so raw volume can spike without a proportional rise in object-storage traffic, while the storage path retains additional throughput headroom.
+The Kafka-fed hot/indexed path can experience rare loss during extreme overloads; the CLP-backed object-storage path does not share this peak-loss mode. Such bursts often come from logs printed in loops. Their repetition raises CLP’s compression ratio, so raw volume can spike without a proportional rise in object-storage traffic, while the storage path retains additional throughput headroom.
 
 The open-source [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) and [CLP repository](https://github.com/y-scope/clp) provide end-to-end JSON-log compression and Presto querying. Public capabilities include mixed KV-IR/archive queries, typed exact-path access, expression rewriting, filter and projection pushdown, typed wildcard value search, complete-event JSON, and pluggable metadata and split filtering.
 

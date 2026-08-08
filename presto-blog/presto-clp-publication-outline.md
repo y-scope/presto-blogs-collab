@@ -46,7 +46,7 @@ The argument is causal, not a feature inventory:
 2. Iceberg Variant can preserve dynamic values, but Parquet must either keep inner fields co-located or shred paths selected at write time.
 3. CLP discovers recurring key-and-type shapes and columnizes every observed schema node, so it needs no shredding policy.
 4. Query-plan resolution and pushdown bind logical paths to those existing encoded columns.
-5. An in-process Presto Native connector preserves storage-native execution.
+5. An in-process Presto Native connector dispatches searchable KV-IR and immutable archive splits, preserving storage-native execution for each format.
 6. Metadata, schema resolution, dictionaries, sequential object-store access, and early termination avoid work at progressively finer levels.
 
 The comparison must remain bounded. With one stable schema, CLP and typed Iceberg/Parquet converge at field columnization, although CLP may still benefit from logtype encoding. Variant remains valuable for interoperability and dynamic values. CLP's strongest structural case is many recurring but uncontrolled schemas and unpredictable future paths and types; wildcard value search is a current complementary capability, while key discovery remains future work.
@@ -303,7 +303,9 @@ Move from the mechanics of one query to the complete integration. This establish
 
 ### Required content
 
-- Link Presto's concepts page and explain only the mappings needed here: the connector adapts CLP, the metadata provider discovers archives, the convenience schema exposes common fields, and archive splits provide parallelism.
+- Link Presto's concepts page and explain only the mappings needed here: the connector adapts CLP, the metadata provider discovers searchable KV-IR files and immutable archives, the convenience schema exposes common fields, and splits provide parallelism.
+- State compactly that current OSS can query either format, including a mixed set of KV-IR and archive splits. Keep Uber's publication lifecycle, overlap precedence, and tier management out of this article.
+- Qualify the detailed ERT, schema-tree, and object-storage walkthrough as the immutable archive path.
 - Prefer this compact prose mapping over a second table; the architecture diagram already carries the structural explanation.
 
 - Java coordinator: discovery, split planning, expression rewriting, and handle serialization.
@@ -333,7 +335,7 @@ Ground performance in specific mechanisms rather than an unsupported benchmark c
 
 ### Presentation strategy
 
-Move from coarse to fine elimination:
+For immutable archive splits, move from coarse to fine elimination:
 
 1. **Metadata planning:** avoid archives using time bounds, indexed dimensions, statistics, and optional common-field views.
 2. **Split-local resolution:** avoid schemas, ERTs, and columns using schema trees, types, logtypes, and dictionaries.
@@ -410,7 +412,7 @@ Use an evidence ladder: **current OSS → Uber production → future direction �
 
 ### Required content
 
-**Current OSS:** end-to-end connector; dynamic field exposure; UDF rewriting; native filter/projection pushdown; typed exact-path and wildcard value search; complete-event JSON; pluggable metadata and split filtering.
+**Current OSS:** end-to-end connector over searchable KV-IR files and immutable CLP archives, including mixed queries across both; dynamic field exposure; UDF rewriting; native filter/projection pushdown; typed exact-path and wildcard value search; complete-event JSON; pluggable metadata and split filtering.
 
 **Uber production:** approved figures of approximately 25 PB/month raw, 750–850 TB/month compressed (roughly 29–33× depending on workload mix), served by five 48-core Presto Native workers directly from object storage. Label advanced planning, billion-file metadata scale, and early termination as Uber-only in the described deployment.
 
@@ -447,7 +449,7 @@ Avoid a second architecture diagram, a benchmark dashboard, a format-layout diag
 
 | Label | Meaning | Examples |
 |---|---|---|
-| **Current OSS** | Verifiable in the public CLP connector plugin or its documentation | Typed accessors, UDF rewriting, native pushdown, wildcard value search, complete-event JSON, pluggable metadata |
+| **Current OSS** | Verifiable in the public CLP connector plugin or its documentation | KV-IR/archive and mixed-format queries, typed accessors, UDF rewriting, native pushdown, wildcard value search, complete-event JSON, pluggable metadata |
 | **Uber production** | Deployed behavior not necessarily in OSS | Scale figures, object-store deployment, advanced planning, billion-file metadata, early termination |
 | **Future direction** | Compatible with the architecture but not promised | `event VARIANT`, wildcard key projection, semantic candidate narrowing |
 | **Comparative claim** | Requires workload/configuration context | Compression or query-performance ordering versus Parquet Variant |
@@ -465,6 +467,7 @@ Avoid a second architecture diagram, a benchmark dashboard, a format-layout diag
 - Favor many recurring schemas. For near-singleton schemas, state that CLP coalesces small ERTs to control overhead, but this cannot restore absent structural repetition; the relative schema-grouping advantage over Parquet disappears.
 - Keep current typed accessors/JSON output separate from future `event VARIANT`.
 - Keep current wildcard value search separate from future key discovery/projection.
+- State that current OSS supports KV-IR, immutable archives, and mixed queries; qualify ERT/schema-tree/archive-reader mechanics as the immutable archive path.
 - Distinguish ordinary pruning, which proves no match, from early termination, which proves no effect on Top-N.
 - Label current OSS, Uber production, and future directions at first mention.
 - Preserve attribution among YScope, IBM/the Presto community, and Uber.

@@ -21,9 +21,10 @@
 - Current PrestoDB has `JSON`, fixed-shape `ROW`, and homogeneous `ARRAY(T)`, but no first-class `VARIANT`. The public connector therefore provides planner-typed exact-path accessors, typed wildcard value search across fields, and complete-event JSON reconstruction.
 - These functions are plan markers rather than row-at-a-time JSON evaluators. The execution path is **query-plan resolution → projection/predicate pushdown → split-local schema resolution → native encoded execution**.
 - Future PrestoDB Variant support could expose one logical `event VARIANT` over unchanged CLP storage. Schema-tree-backed wildcard key discovery and `{path, value}` projection are separate future directions; they are not current public APIs.
-- The Presto Native worker supplies compute and loads the CLP connector plugin in-process. The plugin links CLP as a shared library, opens the object-storage byte stream, and invokes CLP's streaming archive reader to interpret and search bytes as they arrive.
+- The open-source connector supports searchable KV-IR files and immutable CLP archives, including mixed queries across both formats. The detailed ERT, schema-tree, and sequential object-storage mechanics describe immutable archive splits.
+- The Presto Native worker supplies compute and loads the CLP connector plugin in-process. For an immutable archive split, the plugin links CLP as a shared library, opens the object-storage byte stream, and invokes CLP's streaming archive reader to interpret and search bytes as they arrive.
 - Scale comes from avoiding work: metadata prunes archives, schema resolution eliminates ERTs and columns, dictionaries reject some predicates, CLP scans encoded values, and the archive layout supports forward sequential object-store reads. Uber additionally uses planning-time early termination for eligible newest-first limited queries.
-- The open-source connector works end to end today. At Uber, the design serves workloads producing approximately 25 PB of raw logs per month; advanced metadata planning, early termination, and billion-file metadata scale remain production extensions.
+- The open-source connector works end to end today over KV-IR and archive data. At Uber, the design serves workloads producing approximately 25 PB of raw logs per month; advanced metadata planning, early termination, and billion-file metadata scale remain production extensions.
 - The connector is also an early reference for independently developed Presto Native plugins. Its implementation helped complete dynamic connector registration and connector-specific coordinator-to-worker serialization paths.
 - YScope engineers led the connector implementation. IBM engineers and the Presto community supported infrastructure and review; YScope and Uber engineers extended and applied the architecture in production.
 - The article should teach two things: why CLP's storage model fits recurring but uncontrolled schemas, and how another team can preserve a specialized native engine behind a Presto connector.
@@ -758,15 +759,18 @@ Editorial guardrails:
 #### Metadata provider
 
 - Provides table metadata, selected common fields, and split-local structure metadata.
-- Discovers archives.
+- Discovers searchable KV-IR files and immutable archives.
+- Can produce KV-IR splits, archive splits, or a mixed split set.
 - Produces or filters splits.
 - May expose time ranges, selected dimensions, record counts, and other statistics.
 - Interfaces allow implementations beyond the default open-source provider.
 
-#### CLP archives
+#### CLP storage splits
 
-- Stored on a filesystem or object storage, depending on deployment.
-- In Uber production, each Presto Native worker is a compute process running the CLP connector in-process. The connector opens an object-storage byte stream, and CLP's streaming archive reader consumes, interprets, and searches it as archive bytes arrive.
+- Searchable KV-IR files and immutable CLP archives may be stored on a filesystem or object storage, depending on deployment.
+- The connector dispatches the appropriate format reader for each split; one query may contain both formats.
+- The detailed ERT, archive-local schema-tree, and forward object-storage access model in this knowledge base applies to immutable archive splits.
+- In Uber production, each Presto Native worker is a compute process running the CLP connector in-process. For an archive split, the connector opens an object-storage byte stream, and CLP's streaming archive reader consumes, interprets, and searches it as archive bytes arrive.
 - No local archive cache or local-disk staging is used in the described Uber query path.
 
 ### 6.2 Proposed high-level diagram
@@ -783,8 +787,8 @@ flowchart TB
     end
 
     subgraph storage["CLP storage"]
-        metadata["Pluggable metadata provider<br/>Split structure · archives · statistics"]
-        archives["CLP archives<br/>Filesystem or object storage"]
+        metadata["Pluggable metadata provider<br/>Splits · structure · statistics"]
+        files["Searchable KV-IR<br/>Immutable CLP archives"]
     end
 
     user --> coordinator
@@ -792,7 +796,7 @@ flowchart TB
     coordPlugin <--> metadata
     coordPlugin --> worker
     worker --> nativePlugin
-    nativePlugin --> archives
+    nativePlugin --> files
     nativePlugin --> worker
     worker --> coordinator
     coordinator --> user
@@ -1011,7 +1015,7 @@ Extension principle:
 ### 9.2 Useful metadata
 
 - Dataset/table identity
-- Archive URI
+- KV-IR or archive URI and format
 - Minimum and maximum timestamp
 - Record count
 - Selected top-level dimensions
@@ -1025,21 +1029,21 @@ The metadata system should index enough to avoid scans, not attempt to become a 
 
 Question answered:
 
-> Could this archive contain any matching event?
+> Could this file or archive contain any matching event?
 
 Flow:
 
 1. Extract supported top-level predicates.
 2. Translate them into the metadata provider's filter form.
 3. Obtain a correctness-preserving candidate set.
-4. Generate splits only for those archives.
+4. Generate splits only for those files or archives.
 5. Apply residual event-level filtering in CLP or Presto.
 
 Documented supported expression classes include comparisons, logical operators, and certain dereferences, subject to provider configuration.
 
 ### 9.4 CLP execution
 
-After pruning:
+After pruning, the connector dispatches the reader for each selected format. For an immutable archive split:
 
 - Worker opens or streams an archive.
 - CLP uses schema/logtype/statistical information.
@@ -1050,7 +1054,7 @@ After pruning:
 
 ### 9.5 Object storage
 
-Uber production:
+The following describes the immutable archive path in Uber production:
 
 - CLP's archive layout is optimized for object storage: the header, schema tree, dictionaries, and indexes are at the front.
 - After initialization, the reader can progress through the archive sequentially with minimal seeking; it does not need backward seeks or repeated jumps around the object.
@@ -1138,6 +1142,7 @@ Public deployment paths include:
 ### 10.3 Publicly documented connector behavior
 
 - SQL-based read access.
+- Searchable KV-IR and immutable archive formats, including mixed queries across both.
 - Metadata and split-provider abstraction.
 - Basic MySQL-backed reference provider in the CLP open-source project.
 - Configurable split filters.
@@ -1478,7 +1483,7 @@ The article should provide:
 
 ### Publicly documented
 
-- CLP connector provides SQL access to CLP archives.
+- CLP connector provides SQL access to searchable KV-IR files and immutable CLP archives, including mixed queries across both formats.
 - Metadata and split providers are extensible.
 - The CLP open-source project includes a basic MySQL-backed reference provider.
 - Uber and YScope maintain more advanced internal metastore implementations.
@@ -1616,4 +1621,4 @@ The article should provide:
 
 ## 18. Working Abstract
 
-CLP is an open-source system for losslessly compressing and directly searching data whose structures and types evolve over time. Instead of storing each event as one dynamic row value or forcing every observed field into a global sparse table, CLP groups recurring key-and-type schemas into encoded record tables and columnizes every schema node. It also separates recurring text patterns from typed variables inside string values. The CLP connector carries SQL path and predicate intent through Presto planning and pushdown, then binds it to those encoded columns inside each Presto Native worker. The open-source connector provides typed exact-path access, wildcard value search, complete-event JSON, and pluggable metadata filtering today. At Uber, the same architecture serves workloads producing approximately 25 PB of raw logs per month directly from object storage. Future PrestoDB Variant support could expose one logical `event VARIANT` without changing CLP storage, while schema-tree-backed key discovery remains a complementary future direction. The result is both a columnar-by-design approach to schema-less analytics and a reference path for independently developed Presto Native connectors.
+CLP is an open-source system for losslessly compressing and directly searching data whose structures and types evolve over time. Instead of storing each event as one dynamic row value or forcing every observed field into a global sparse table, CLP groups recurring key-and-type schemas into encoded record tables and columnizes every schema node. It also separates recurring text patterns from typed variables inside string values. The CLP connector carries SQL path and predicate intent through Presto planning and pushdown, then binds it to those encoded columns inside each Presto Native worker. The open-source connector queries searchable KV-IR files and immutable archives—including mixed queries across both—and provides typed exact-path access, wildcard value search, complete-event JSON, and pluggable metadata filtering today. The ERT, schema-tree, and sequential object-storage walkthrough describes the immutable archive path. At Uber, the same architecture serves workloads producing approximately 25 PB of raw logs per month directly from object storage. Future PrestoDB Variant support could expose one logical `event VARIANT` without changing CLP storage, while schema-tree-backed key discovery remains a complementary future direction. The result is both a columnar-by-design approach to schema-less analytics and a reference path for independently developed Presto Native connectors.
