@@ -69,15 +69,17 @@ This article may define ERTs, the schema tree, and logtypes briefly because the 
 - Describe unshredded Variant as a row-local native binary value: known paths are navigable without parsing text, but inner fields lack independent Parquet columns and statistics.
 - Explain that shredding gives writer-selected paths typed columns, compression, projection, and statistics. The choice must be finalized before the file is written; adding paths requires rewriting existing files.
 - Preserve type-polymorphism accuracy: one `typed_value` has one declared type, while other types remain in `value`. Promoting every path/type creates a wide, sparse physical union.
+- Clarify that even fully shredding all observed paths retains one file-wide schema. Fields absent from a row become missing optional-column entries. Parquet encodes this sparsity compactly through definition levels rather than literal null payloads.
 - Use the Parquet [overview](https://parquet.apache.org/blog/2026/02/27/variant-type-in-apache-parquet-for-semi-structured-data/) and Databricks [introduction](https://www.databricks.com/blog/introducing-variant-new-open-standard-semi-structured-data-apache-parquettm-delta-lake) as background; specifications support normative claims.
 
 ### 2. What the Connector Preserves: CLP's Native Columnar Model
 
 - Open with a direct reference to YScope's [August 2025 post](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) for the full ERT, schema-tree, logtype, and original-integration explanation. State that this section is deliberately only the refresher required for the Variant comparison.
-- Establish the physical contrast: Parquet Variant is value-first with optional selected-path shredding; CLP is column-first.
-- Define an encoded record table (ERT): an immutable archive groups recurring key-and-type shapes, records them in an archive-local schema tree, and assigns every observed schema node an encoded column. Polymorphic paths map to separate type-homogeneous columns.
+- Establish the physical contrast with a table-within-a-file analogy. A Parquet file remains one table whose rows contain Variant values; optional shredding adds writer-selected typed columns to that table. A CLP archive is closer to a container of nested columnar tables.
+- Define an encoded record table (ERT): each ERT groups one recurring key-and-type shape into type-homogeneous encoded columns. The archive-local schema tree relates ERTs and maps every observed path/type to their columns, including separate columns for polymorphic types. ERTs are internal storage structures, not separately addressable SQL tables.
+- Contrast structural absence with explicit nulls. Each ERT contains only the fields in its shape, avoiding missing placeholders across unrelated shapes; explicit source null values are still preserved.
 - Treat the schema tree as execution metadata. It resolves exact paths and typed cross-field value searches once per archive split; a convenience schema can expose bindings after ingestion without rewriting archives.
-- Explain logtypes once: CLP separates recurring free-form text from typed variables, enabling encoded free-text search and log-specific compression below the document-field boundary.
+- Explain logtypes once: CLP separates recurring free-form text from typed variables, enabling encoded free-text search and log-specific compression below the document-field boundary. Connect shape and logtype locality to query work: structural predicates narrow scans to matching ERTs/columns, while text predicates search encoded logtypes/variables.
 - Give the decision rule explicitly. CLP fits unpredictable paths/types, recurring uncontrolled schemas, cross-field/free-text search, and compact searchable archives. Variant with selective shredding fits interoperable tables and predictable hot paths.
 - State limitations: with a stable schema, CLP has no field-columnization advantage over typed or comprehensively shredded Parquet; with near-singleton shapes, recurring-shape locality fades.
 - State the evidence boundary: earlier benchmarks used conventional Parquet and do not establish an ordering against Variant or Variant shredding.
@@ -87,16 +89,17 @@ This article may define ERTs, the schema tree, and logtypes briefly because the 
 - Link the August 2025 walkthrough instead of repeating UDF rewriting or optimizer mechanics. Begin after pushdown and ask which physical data the reader touches.
 - Keep one three-row table comparing exact named paths, polymorphic paths, and typed cross-field value search.
 - Scope Variant cost precisely: an unshredded recursive predicate reads relevant `value` pages and inspects per-row binary structure, not unrelated columns or textual JSON.
-- State current versus future CLP behavior: typed wildcard value search is current OSS; wildcard key discovery and general `{path, value}` projection are future directions.
+- State current CLP behavior plainly: when a query uses a wildcard rather than an exact key, the connector infers the value type and resolves compatible encoded columns from split metadata. Keep returning matched keys and general `{path, value}` projection as separate future directions.
 - Close on logical complementarity: future PrestoDB Variant could expose `event VARIANT` over CLP, while constant paths still bind to CLP columns and complete events require reconstruction.
 
 ### 4. Metadata Before and Within Each Split
 
 - Separate file-level planning from per-split metadata. The provider identifies candidate KV-IR files and archives; the selected archive then maps paths/types to encoded columns.
-- Treat file-level metadata as complementary to CLP and analogous to Iceberg's coarse planning role.
-- Label Uber's billion-file metastore and eligible Top-N early termination as production extensions, not current OSS. Distinguish pruning (cannot match) from early termination (cannot affect the ordered result).
+- Give Uber's billion-file internal-metastore scale and resource efficiency qualitatively. Do not publish its infrastructure footprint or present it as the OSS reference provider.
+- Treat file-level metadata as complementary to CLP and closely analogous to Iceberg's coarse planning role. Separate Uber's early-termination extension: Iceberg standardizes file counts, bounds, and sort-order identifiers, but not the exact predicate-specific matching counts and enforced append-order invariants needed for this correctness guarantee.
+- Label Uber's billion-file metastore and eligible Top-N early termination as production extensions, not current OSS. State the correctness invariant: exact per-file matching counts for metadata-resolvable predicates; descending maximum-timestamp order; a watermark at the earliest timestamp covered, frozen when the count first reaches `N`; and continued selection of every file overlapping that cutoff. Stop only when the next file is strictly older. Unsupported row-level predicates disable the guarantee. Distinguish pruning (cannot match) from safe early termination (remaining files cannot affect the ordered result).
 - Contrast Parquet Variant's row-local representation and shredded-column statistics with CLP's complete archive-local path/type map, dictionaries, logtypes, and indexes.
-- Keep typed wildcard value search current; keep key discovery, structural/semantic split summaries, and candidate narrowing future and unbenchmarked.
+- Explain current typed cross-field value search: for a wildcard key, infer the value type from the query and use archive metadata to search compatible encoded columns. Keep returning matched keys, structural/semantic split summaries, and candidate narrowing future and unbenchmarked.
 
 ### 5. Making Specialized Storage Pluggable Without a Presto Fork
 
@@ -150,7 +153,7 @@ Use only three aids: the predicate table in Section 3, the coordinator/worker di
 | **Prior foundation** | Established by the August 2025 post or earlier CLP research | ERTs, logtypes, typed accessors, rewriting, pushdown, conventional-Parquet evaluation |
 | **Current OSS** | Verifiable in current public source | KV-IR/archive and mixed scans, typed exact paths, wildcard value search, whole-event reconstruction, pluggable metadata |
 | **Uber production** | Deployed behavior not necessarily public | Scale figures, advanced metastore, early termination |
-| **Future direction** | Architecturally compatible but not promised | `event VARIANT`, key discovery, wildcard projection, structural/semantic summaries |
+| **Future direction** | Architecturally compatible but not promised | `event VARIANT`, returning matched keys, wildcard projection, structural/semantic summaries |
 | **Comparative claim** | Requires a controlled evaluation | Compression or query-performance ordering versus Parquet Variant |
 
 ---
@@ -165,10 +168,11 @@ Use only three aids: the predicate table in Section 3, the coordinator/worker di
 - Describe the current worker component as an out-of-band shared library loaded by Presto Native.
 - Call unshredded Variant a native binary row-local value, not textual JSON, an opaque blob, a row store, or literal “row compression.”
 - Do not claim Variant lacks pushdown, cannot express recursive predicates, or cannot preserve type-polymorphic values. Scope exhaustive scans to relevant `value` pages and per-row binary structure.
-- CLP is intrinsically columnized; “all fields shredded” is only an analogy. Do not claim a field-columnization advantage over typed/comprehensively shredded Parquet for stable schemas.
+- CLP is intrinsically columnized; “all fields shredded” is only an analogy. For changing shapes, comprehensive shredding still creates a file-wide sparse union; for stable schemas, do not claim a field-columnization advantage over typed/comprehensively shredded Parquet.
+- Do not say that CLP has no null values. Distinguish explicit source nulls from structurally absent fields, and note that Parquet encodes missing entries through definition levels rather than literal null payloads.
 - Tie CLP advantages to recurring schemas, repetitive log text, unpredictable fields/types, or cross-field search. Coalescing near-singleton ERTs controls overhead but cannot create structural repetition.
 - Never apply conventional-Parquet benchmark results to Variant or shredding. A direct ordering requires the same corpus, codec, shredding policy, query set, and reader versions.
-- Separate current typed wildcard value search from future key discovery and general wildcard projection.
+- Separate current typed value search over wildcard keys from future return of matched keys and general wildcard projection.
 - Separate current OSS, Uber production, and future metadata behavior. Keep semantic summaries future; distinguish pruning from early termination.
 - Keep searchable KV-IR, immutable archives, and mixed scans distinct. ERT and archive-local schema-tree mechanics describe the immutable archive path.
 - Qualify “build once, run everywhere” with libc, architecture, dependency, Presto Native/Velox, and target-CPU compatibility. Folly's `F14LinkCheck` makes CPU flags part of the loading contract.
@@ -183,7 +187,7 @@ Use only three aids: the predicate table in Section 3, the coordinator/worker di
 - Variant chronology: Iceberg v3 adoption, Parquet Variant/shredding approval dates, and current Trino support status.
 - Current PrestoDB Variant status across Java, serialization, Presto Native/Velox, Iceberg, and Parquet reading.
 - Exact historical/current connector boundary and the merge state/capabilities of Presto PRs #27653 and #27652.
-- Current public CLP functions and semantics; confirm key discovery/general wildcard projection remain future.
+- Current public CLP functions and semantics; confirm returning matched keys/general wildcard projection remain future.
 - “One of the first” versus “the first” independently developed pluggable Presto Native connector.
 - Final release matrix: Presto/Velox pins, images, libc, architectures, CPU targets, and `F14LinkCheck` mode.
 - Merge and stable documentation for cumulative connector PR #64; replace the draft's PR link.

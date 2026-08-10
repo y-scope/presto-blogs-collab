@@ -34,8 +34,11 @@
 - **Why:** The [August 2025 YScope post](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) owns the complete CLP and optimizer walkthroughs.
 - **Takeaway:** CLP intrinsically columnizes data and applies log-aware encoding.
 - **Important points:**
-  - ERTs group recurring shapes; the archive schema tree maps fields and types to columns.
-  - Logtypes separate recurring text from variables for compressed free-text search.
+  - Physical analogy: one Parquet table/file with row-level Variant values and optional shredded columns; one CLP archive containing shape-specific, type-homogeneous ERTs.
+  - Fully shredded Variant remains a file-wide sparse union; each ERT contains only its shape's fields. Missing fields are structural, while explicit source nulls remain preserved.
+  - ERTs are internal storage structures, not SQL tables; the archive schema tree maps their fields and types to columns.
+  - ERT and logtype locality can narrow structural and text queries to relevant encoded columns and streams.
+  - Logtypes separate recurring text from variables for compression and encoded free-text search.
   - Fit: uncontrolled schemas and cross-field/text search; stable or unique shapes reduce the advantage.
   - Earlier conventional-Parquet benchmarks say nothing about Variant.
 
@@ -47,7 +50,7 @@
 - **Important points:**
   - Exact/polymorphic paths: shredded or `value` access versus homogeneous CLP columns.
   - Cross-field search: per-row Variant inspection versus CLP metadata candidate resolution.
-  - Current CLP: typed wildcard value search. Future: wildcard keys and `{path, value}` projection.
+  - Current CLP: for a wildcard key, infer the value type and search compatible encoded columns across paths.
 
 ## 4. Metadata at two scales
 
@@ -55,8 +58,11 @@
 - **Why:** The earlier post covers split discovery, not the two-level comparison.
 - **Takeaway:** Coarse metadata selects files; archive metadata selects encoded structures.
 - **Important points:**
-  - Uber extensions: billion-file planning and eligible Top-N early termination.
-  - Future: structural summaries, key discovery, and semantic candidate narrowing.
+  - Uber scale: billions of file records with a modest metastore footprint.
+  - Iceberg analogy: coarse file planning is similar; exact predicate-specific counts and append-order invariants for safe early termination are not standardized.
+  - Uber Top-N: exact per-file matching counts and time bounds for metadata-resolvable predicates; reaching `N` alone is insufficient when file ranges overlap.
+  - Stream by descending maximum timestamp; when the exact count reaches `N`, freeze the earliest covered timestamp and continue through every overlapping file. Unsupported row-level predicates disable the guarantee.
+  - Future: returning matched keys, structural summaries, and semantic candidate narrowing.
 
 ## 5. Native execution becomes independently pluggable
 
