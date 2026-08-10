@@ -33,14 +33,14 @@ Readers should leave able to decide when portability and predictable hot paths f
 | 1. Variant landscape | Explain the SQL/table/file stack and unshredded-versus-shredded tradeoff | 250–285 |
 | 2. CLP model | Explain what specialized storage contributes and when it matters | 350–390 |
 | 3. Predicate binding | Compare the physical work behind exact, polymorphic, and cross-field predicates | 245–280 |
-| 4. Pluggable architecture | Contrast the forked integration with the current external native connector | 290–330 + diagram |
-| 5. Using the connector | Give the shortest operator path and one representative query | 140–170 |
-| 6. Two-scale metadata | Separate candidate-split planning from archive-local binding | 225–260 |
+| 4. Two-scale metadata | Separate candidate-split planning from archive-local binding | 225–260 |
+| 5. Pluggable architecture | Contrast the forked integration with the current external native connector | 290–330 + diagram |
+| 6. Using the connector | Give the shortest operator path and one representative query | 140–170 |
 | 7. Connector-author path | Generalize the implementation into four compact stages | 300–350 |
 | 8. Conclusion | Separate current OSS, production evidence, and future direction; return to the Presto thesis | 220–250 |
 | Acknowledgments | Credit implementation, infrastructure, review, and production application | 40–60 |
 
-Each section must create the question answered by the next: landscape → storage model → query work → extension boundary → operator experience → metadata → reusable author guidance → decision.
+Each section must create the question answered by the next: landscape → storage model → query work → metadata → extension boundary → operator experience → reusable author guidance → decision.
 
 ---
 
@@ -90,7 +90,15 @@ This article may define ERTs, the schema tree, and logtypes briefly because the 
 - State current versus future CLP behavior: typed wildcard value search is current OSS; wildcard key discovery and general `{path, value}` projection are future directions.
 - Close on logical complementarity: future PrestoDB Variant could expose `event VARIANT` over CLP, while constant paths still bind to CLP columns and complete events require reconstruction.
 
-### 4. Making Specialized Storage Pluggable Without a Presto Fork
+### 4. Metadata Before and Within Each Split
+
+- Separate file-level planning from per-split metadata. The provider identifies candidate KV-IR files and archives; the selected archive then maps paths/types to encoded columns.
+- Treat file-level metadata as complementary to CLP and analogous to Iceberg's coarse planning role.
+- Label Uber's billion-file metastore and eligible Top-N early termination as production extensions, not current OSS. Distinguish pruning (cannot match) from early termination (cannot affect the ordered result).
+- Contrast Parquet Variant's row-local representation and shredded-column statistics with CLP's complete archive-local path/type map, dictionaries, logtypes, and indexes.
+- Keep typed wildcard value search current; keep key discovery, structural/semantic split summaries, and candidate narrowing future and unbenchmarked.
+
+### 5. Making Specialized Storage Pluggable Without a Presto Fork
 
 - Explicitly contrast the earlier native-in-fork integration with the current out-of-band worker library. Never call the earlier implementation a plugin or non-native.
 - Show Java coordinator responsibilities—metadata, tables, splits, rewriting, and handle serialization—versus native worker responsibilities—registration, deserialization, CLP scanning, and columnar batches.
@@ -98,21 +106,13 @@ This article may define ERTs, the schema tree, and logtypes briefly because the 
 - Explain the two upstream hooks: [PR #27653](https://github.com/prestodb/presto/pull/27653) registers factories from dynamically loaded code; [PR #27652](https://github.com/prestodb/presto/pull/27652) routes connector-specific serialized values to native deserialization.
 - End with the architectural takeaway: native execution moved out of the fork, not out of the worker.
 
-### 5. Using the Connector
+### 6. Using the Connector
 
 - Give the operator path only: ingest through the YScope CLP OSS package, install matched coordinator/worker artifacts, enable the worker loader, and configure `etc/catalog/clp.properties`.
 - Explain that the [documented production path](https://docs.yscope.com/presto/connector/clp.html) reads the MySQL metadata populated by CLP ingestion; custom providers may replace it.
 - State the current boundary: read-only access through the `default` schema.
 - Include one compact query showing typed exact paths, typed wildcard value search, and whole-event reconstruction. Mark names as examples and refer mechanics to the earlier post.
 - Link the [packaging flow](https://github.com/y-scope/clp-plugin-presto-connector/blob/main/tools/build-packages/README.md); do not turn the section into an installation guide.
-
-### 6. Metadata Before and Within Each Split
-
-- Separate file-level planning from per-split metadata. The provider identifies candidate KV-IR files and archives; the selected archive then maps paths/types to encoded columns.
-- Treat file-level metadata as complementary to CLP and analogous to Iceberg's coarse planning role.
-- Label Uber's billion-file metastore and eligible Top-N early termination as production extensions, not current OSS. Distinguish pruning (cannot match) from early termination (cannot affect the ordered result).
-- Contrast Parquet Variant's row-local representation and shredded-column statistics with CLP's complete archive-local path/type map, dictionaries, logtypes, and indexes.
-- Keep typed wildcard value search current; keep key discovery, structural/semantic split summaries, and candidate narrowing future and unbenchmarked.
 
 ### 7. Starting an Out-of-Band Presto Native Connector from Scratch
 
@@ -139,7 +139,7 @@ Credit YScope engineers for leading connector implementation; IBM engineers and 
 
 ## Information Design
 
-Use only three aids: the predicate table in Section 3, the coordinator/worker diagram in Section 4, and the compact query in Section 5. Do not add a benchmark dashboard, second layout diagram, full configuration block, optimizer walkthrough, or exhaustive API inventory.
+Use only three aids: the predicate table in Section 3, the coordinator/worker diagram in Section 5, and the compact query in Section 6. Do not add a benchmark dashboard, second layout diagram, full configuration block, optimizer walkthrough, or exhaustive API inventory.
 
 ---
 
