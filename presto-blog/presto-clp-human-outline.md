@@ -49,7 +49,6 @@
   - **Logtypes:** Inferred, format-string-like templates encode recurring static text once. Extracted variable values are stored in separate typed ERT columns.
   - Compact archives can reduce object-storage transfer and request costs.
   - **Limits:** Stable schemas or nearly unique shapes reduce CLP's advantage.
-  - The August 2025 benchmarks predate Variant and Variant shredding. They cover conventional Parquet only.
 
 ## 3. From predicate to physical scan: Parquet Variant and CLP
 
@@ -69,10 +68,10 @@
 - **Takeaway:** Two metadata layers do more than prune splits.
 - **Important points:**
   - **General planning:** Time bounds, dimensions, and statistics. Uber applies it across billions of file records.
-  - **Top-N specialization:** Eligible newest-first queries can terminate before listing every file.
+  - **Proof-based Top-N specialization:** Eligible newest-first queries may stop file enumeration before every file is listed. Not ordinary `LIMIT` short-circuiting.
   - Correctness requires trustworthy time bounds, exact supported-predicate counts, and an overlap-aware watermark.
   - Time sorting and append-only publication help but are not required.
-  - **Archive metadata:** Path/type map, logtype/value dictionaries, and indexes support streaming without local staging.
+  - **Archive metadata:** The MST, logtype/value dictionaries, and indexes support streaming without local staging.
   - Uber's early termination is a production extension.
   - Structural/logtype summaries and semantic candidate narrowing remain future work.
 
@@ -115,7 +114,7 @@
   - **Choose Variant:** Cross-engine portability with predictable paths for shredding.
   - **Choose CLP:** Uncontrolled schemas, recurring structure/text, and cross-field or free-text search.
   - Stable schemas or nearly unique shapes reduce CLP's advantage.
-  - **Current OSS:** Typed exact paths, typed wildcard-key value search, reconstruction, and pushdown across both CLP storage forms: streaming-compressed KV-IR files and compact immutable archives.
+  - **Current OSS:** Typed exact paths, typed wildcard-key value search, reconstruction, and pushdown across compressed KV-IR files (appendable, streamable, searchable) and compact immutable archives. Both storage forms support streaming search.
   - **Uber:** About 25 PB/month raw to 750–850 TB. Five 48-core workers.
   - Uber's advanced planning is separate from current OSS.
   - Future Variant SQL could unify access without unifying storage.
