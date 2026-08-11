@@ -1070,7 +1070,7 @@ The production constraint is therefore governance of a shared object-storage API
 
 Publication wording guardrail: name the front-loaded header, schema tree, dictionaries, and indexes, followed by forward, sequential access with minimal seeking. Do not turn this into a claim that stream setup or object-store range requests have zero cost.
 
-### 9.6 Planning-time early termination: Uber extension
+### 9.6 Planning-time early termination: workload specialization used at Uber
 
 This is advanced internal behavior and should be mentioned briefly in the Presto article, not deeply derived. The underlying design materials are not intended for public consumption and must not be linked or cited.
 
@@ -1086,13 +1086,14 @@ LIMIT 100;
 
 Properties:
 
-- Logs are append-only.
 - The query has a finite `LIMIT N` and orders by the log timestamp, normally newest first.
-- Each archive is internally ordered by timestamp.
-- Archive time ranges may overlap.
+- Each candidate file or archive has trustworthy beginning and ending timestamps.
+- File and archive time ranges may overlap.
 - Metadata can be streamed in time-aware order.
+- Metadata provides exact matching counts or another correctness-preserving bound for supported predicates.
 - Presto does not guarantee split execution order and normally runs planned work to completion.
 - Eligibility rules must prove that unseen older archives cannot alter the result.
+- Internal timestamp ordering and append-only publication can improve efficiency and simplify consistency, but they are helpful properties rather than the core eligibility condition.
 - These requirements describe the dominant interactive log-query shape, so most user investigations can benefit even though the optimization is not universal.
 
 Optimization:
