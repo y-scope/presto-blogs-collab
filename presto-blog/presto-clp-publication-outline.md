@@ -11,7 +11,7 @@
 
 ## Editorial Contract
 
-The article explains how Presto can query a specialized native semi-structured format without embedding it in a fork. Variant supplies the broader lakehouse context. It is not a currently available PrestoDB alternative or a co-equal subject.
+The article explains what specialized storage can contribute beneath a standard semi-structured SQL interface, then shows how Presto Native exposes CLP through a pluggable connector. Variant supplies the broader lakehouse context. It is not a currently available PrestoDB alternative or a co-equal subject.
 
 > CLP's distinctive storage model combines intrinsic columnization, recurring-shape locality, log-specific encoding, and storage-native search. The connector exposes those capabilities behind a reusable Presto Native extension boundary. A future Variant SQL value could complement CLP logically without making Parquet Variant and CLP physically equivalent.
 
@@ -29,14 +29,14 @@ Readers should leave able to decide when portability and predictable hot paths f
 
 | Section | Editorial job | Target |
 |---|---|---:|
-| Opening | Separate the SQL value from physical storage, then establish the prior post and historical boundary | 190–220 |
+| Opening | Lead with the unresolved physical layer, production stakes, prior post, and current connector | 220–250 |
 | 1. Variant landscape | Explain the SQL/table/file stack and unshredded-versus-shredded tradeoff | 210–235 |
 | 2. CLP model | Explain what specialized storage contributes and when it matters | 320–350 |
 | 3. Predicate binding | Compare the physical work behind exact, polymorphic, and cross-field predicates | 200–225 |
-| 4. Metadata beyond pruning | Separate metastore planning from archive-local narrowing | 235–250 |
-| 5. Deployment to first query | Show the operator outcome through installation references and one representative query | 190–220 |
-| 6. Pluggable connector reference | Explain the Java/native contract and turn the CLP implementation into reusable author guidance | 450–480 + diagram |
-| 7. Conclusion | Turn the comparison into a workload-based storage decision, then return to the Presto thesis | 210–235 |
+| 4. Metadata beyond pruning | Use metastore and archive metadata as production evidence | 230–250 |
+| 5. Deployment to first query | Show the SQL outcome first, then the short operator path | 200–225 |
+| 6. Pluggable connector reference | Explain the Java/native contract and compact reusable author guidance | 400–440 + diagram |
+| 7. Conclusion | Make the workload decision and complementary-model thesis once | 130–160 |
 | Acknowledgments | Credit implementation, infrastructure, review, and production application | 35–50 |
 
 Each section must create the question answered by the next: landscape → storage model → query work → metadata → operator experience → reusable connector architecture → decision.
@@ -55,11 +55,12 @@ This article may define ERTs, the MST, and logtypes briefly because the Variant 
 
 ### Opening: SQL Abstraction Does Not Erase Storage Design
 
-- Frame schema variability as an ownership problem: analytical platforms do not control evolving producers.
-- Define the open-source [CLP project](https://github.com/y-scope/clp) from [YScope](https://yscope.com) immediately as a native columnar format and search engine for semi-structured data. Cite the [OSDI '24 μSlope paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui) for its core storage ideas, then cite the August 2025 post for the original Presto integration.
+- Lead with the tension: Variant standardizes interchange, but a value type and table contract do not determine physical organization, compression, or search.
+- Frame schema variability as an ownership problem: analytical platforms do not control evolving producers or future query paths.
+- Define the open-source [CLP project](https://github.com/y-scope/clp) from [YScope](https://yscope.com) as a native columnar format and search engine. Use Uber's roughly 25 PB/month raw volume to establish stakes, not as comparative benchmark evidence. Cite the [OSDI '24 μSlope paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui) for core storage ideas, then the August 2025 post for the original Presto integration.
 - State the history precisely: the earlier implementation executed CLP natively in Velox workers of a Presto fork and required changes in that fork and Velox.
-- Introduce the present contrast: PrestoDB lacks end-to-end Variant, while CLP is available through an out-of-band Presto Native connector loaded as a shared library.
-- End by promising both storage analysis and a reusable connector boundary, not by justifying why another blog exists.
+- Introduce the present contrast: PrestoDB lacks end-to-end Variant, while CLP is available through a pluggable Presto Native connector.
+- End with the article's two questions: where the physical work differs and how the connector carries CLP from SQL to the coordinator–worker boundary.
 
 ### 1. Variant in the Lakehouse Landscape
 
@@ -73,11 +74,11 @@ This article may define ERTs, the MST, and logtypes briefly because the Variant 
 
 ### 2. CLP: Native Columnar Semi-Structured Storage
 
-- Open with a direct reference to YScope's [August 2025 post](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) for the full ERT, MST, logtype, and original-integration explanation. State that this section is deliberately only the refresher required for the Variant comparison.
+- Open with a direct reference to YScope's [August 2025 post](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) for the full explanation. State that only two ideas repeat here: document structure through ERTs/MST and text decomposition through logtypes/typed value columns.
 - Establish the physical contrast with a table-within-a-file analogy. A Parquet file remains one table whose rows contain Variant values. Optional shredding adds writer-selected typed columns to that table. A CLP archive is closer to a container of many shape-specific columnar subtables behind one logical event stream. Avoid “nested tables,” which could imply a SQL-visible hierarchy.
 - Define an encoded record table (ERT): each ERT groups one recurring key-and-type shape into type-homogeneous encoded columns. Each immutable CLP archive discovers and defines its own ERTs independently. Its archive-local **Merged Schema Tree (MST)** merges those schemas into one inventory and maps every observed path/type to their columns, including separate columns for polymorphic types. ERTs are internal storage structures, not separately addressable SQL tables.
 - Contrast structural absence with explicit nulls. Each ERT contains only the fields in its shape, avoiding missing placeholders across unrelated shapes. Explicit source null values are still preserved.
-- Treat the MST as archive-local execution metadata rather than a global table schema. Explain that an optional Presto table schema, called a convenience schema, can expose selected CLP paths as ordinary typed columns. It changes only the SQL table interface because the ERT columns already exist. Leave the detailed path-resolution work to Section 3.
+- Treat the MST as archive-local execution metadata rather than a global table schema. Move the convenience schema to Section 5 so it does not interrupt the ERT → MST → logtype reveal.
 - Explain logtypes once as inferred, format-string-like templates that encode recurring static text once while CLP stores the extracted variable values in separate typed ERT columns. This enables encoded free-text search and log-specific compression below the document-field boundary. Connect shape and logtype locality to query work: structural predicates narrow scans to matching ERTs/columns, while text predicates search encoded logtypes/variables.
 - Give the decision rule explicitly. CLP fits unpredictable paths/types, recurring uncontrolled schemas, cross-field/free-text search, and compact searchable archives. Variant with selective shredding fits interoperable tables and predictable hot paths.
 - State limitations. With a stable schema, CLP has no field-columnization advantage over typed or comprehensively shredded Parquet. With near-singleton shapes, recurring-shape locality fades.
@@ -99,14 +100,16 @@ This article may define ERTs, the MST, and logtypes briefly because the Variant 
 - Label Uber's billion-file metastore and current eligible Top-N implementation as production extensions, not current OSS. State the correctness invariant in four parts: exact per-file matching counts for metadata-resolvable predicates, descending maximum-timestamp order, a watermark at the earliest timestamp covered and frozen when the count first reaches `N`, and continued selection of every file overlapping that cutoff. Stop only when the next file is strictly older. Unsupported row-level predicates disable the guarantee. Distinguish pruning (cannot match) from safe early termination (remaining files cannot affect the ordered result).
 - End with metadata inside the selected CLP archive. Treat ordinary column statistics, value dictionaries, and indexes as a shared baseline rather than an either/or contrast. What distinguishes CLP is the archive-local MST, which provides the complete path/type-to-column map, plus logtype metadata that captures structure inside text values. These are not part of the standard Parquet Variant representation.
 - State the ownership boundary directly. Metastore metadata determines which files become splits. CLP archive metadata narrows the work inside a selected split.
-- Avoid repeating the predicate-binding comparison from Section 3. Focus on how a worker initializes from compact archive metadata and streams candidate columns without local staging. Keep structural/logtype summaries future and unbenchmarked.
+- Add the approved production proof after the two metadata layers: about 25 PB/month raw to 750–850 TB, with five 48-core workers serving CLP data from object storage.
+- Avoid repeating the predicate-binding comparison from Section 3. Focus on how a worker initializes from compact archive metadata and streams candidate columns without local staging. Omit speculative semantic-analysis directions from the reader-facing draft.
 
 ### 5. Deploying and Querying with the CLP Connector
 
-- Give the operator path only: ingest through the YScope CLP OSS package, install matched coordinator/worker artifacts, enable the worker loader, and configure `etc/catalog/clp.properties`.
+- Lead with one compact query showing typed exact paths, typed wildcard value search, and whole-event reconstruction. Mark names as examples and refer mechanics to the earlier post.
+- Define the optional convenience schema here: selected CLP paths can appear as ordinary typed Presto columns without rewriting archives because the ERT columns already exist.
+- Then give the operator path only: ingest through the YScope CLP OSS package, install matched coordinator/worker artifacts, enable the worker loader, and configure `etc/catalog/clp.properties`.
 - Explain that the [documented production path](https://docs.yscope.com/presto/connector/clp.html) reads the MySQL metadata populated by CLP ingestion. Custom providers may replace it.
 - State the current boundary: read-only access through the `default` schema.
-- Include one compact query showing typed exact paths, typed wildcard value search, and whole-event reconstruction. Mark names as examples and refer mechanics to the earlier post.
 - Link the [packaging flow](https://github.com/y-scope/clp-plugin-presto-connector/blob/main/tools/build-packages/README.md). Do not turn the section into an installation guide.
 - Link the connector's [Compose stack](https://github.com/y-scope/clp-plugin-presto-connector/blob/main/integration-tests/docker-compose.yaml) as the concrete matched-artifact and init-container example. Link the CLP [deployment Compose stack](https://github.com/jackluo923/clp/blob/cf9e2fab8e307a90a1009364c7a21d7a7b0a1727/tools/deployment/presto-clp/docker-compose.yaml) as the complete coordinator/worker deployment example.
 - End by revealing that the short operator path depends on a two-part coordinator–worker contract.
@@ -129,10 +132,9 @@ Keep the publication check in this outline rather than the reader-facing draft. 
 ### 7. Conclusion: Choosing Semi-Structured Storage for Presto
 
 - Give the decision rule once. Variant fits cross-engine portability with predictable paths for shredding. CLP fits when the analytical platform cannot control upstream schemas or content or preselect useful query paths.
-- Connect recurring structural patterns and static text interleaved with variable values to ERT/logtype compression. Connect archive metadata to narrower lookups. Retain the stable-schema and near-unique-shape limits.
-- Use one compact evidence paragraph: representative current OSS capabilities followed by approved Uber production scale. Keep advanced planning and early termination labeled as Uber extensions.
+- Retain the stable-schema and near-unique-shape limits without repeating the storage-model inventory.
 - State the future logical/physical distinction concretely. One Variant SQL interface would not make scans alike: Parquet reads `value` or shredded columns, while CLP binds paths to ERT columns and encoded text streams.
-- End on the Presto contribution. The pluggable native boundary provides common SQL and planning while keeping storage-specific execution outside the Presto codebase.
+- End on complementarity and the Presto contribution: common SQL and planning can coexist with storage-specific native execution behind a pluggable connector boundary.
 
 ### Acknowledgments
 
