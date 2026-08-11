@@ -1,7 +1,7 @@
 # CLP Part III Knowledge Base
 
 - **Status:** Synchronized source of truth for the Uber Engineering draft and publication outline
-- **Updated:** August 8, 2026
+- **Updated:** August 10, 2026
 - **Working title:** *From 25 PB of Logs to Native SQL: Modernizing Logging at Uber with CLP (Part III)*
 - **Publication target:** Uber Engineering Blog
 - **Purpose:** Preserve approved facts, technical mechanisms, capability boundaries, attribution, editorial constraints, and remaining publication work behind the concise article
@@ -12,17 +12,21 @@ This document is intentionally more detailed than the article. The draft should 
 
 ## 1. Executive Summary
 
-- Currently onboarded machine-learning, streaming, and data-platform workloads generate approximately **25 PB of raw logs per month**.
+- Currently onboarded machine-learning/AI, streaming, and data-platform workloads generate approximately **25 PB of raw logs per month**.
 - CLP reduces that monthly volume to approximately **750–850 TB**:
   - Roughly **29–33× compression**
   - Approximately **97% less stored volume**
-- Five 48-core Presto Native workers serve recent and older data through searchable KV-IR files and immutable CLP archives directly from object storage.
+- Five 48-core Presto Native workers serve recent and older data through searchable KV-IR files and immutable CLP archives directly from Uber's internal object storage.
 - Worker CPU utilization is typically approximately **5–10%**.
 - The objective is responsive user latency with minimal use of shared infrastructure, not maximum throughput.
 - Uber intentionally paces object-storage API use; low CPU does not imply a need to increase scan throughput.
 - No individual query scans the complete monthly ingest volume.
 - The system supports a continuum from natural-language messages to enriched and native JSON events whose schemas and types evolve continuously.
-- Fresh logs first land in searchable KV-IR files and are asynchronously aggregated into immutable CLP archives.
+- Fresh logs first land in searchable, streaming-compressed KV-IR files and are asynchronously aggregated into immutable CLP archives.
+- A log collector runs on every host, monitors container logs, enriches each event, and incrementally compresses it into an appendable KV-IR file.
+- The active KV-IR file is already compressed as it grows; archive aggregation is not where compression begins.
+- On a configurable timeout, the collector uploads the current file extent without closing the stream; later events extend the same KV-IR file.
+- Each file update produces a metadata event on Kafka, which feeds the metastore used for query discovery.
 - A single query can span a mixed set of KV-IR and archive splits.
 - Where KV-IR and archive coverage overlaps, Uber prioritizes the archived copy and excludes the incorporated KV-IR input, so both formats can contribute to a query without returning duplicate events.
 - CLP archives contain archive-local schema trees and schema-homogeneous encoded record tables; there is no authoritative dataset-global schema tree.
@@ -38,10 +42,6 @@ This document is intentionally more detailed than the article. The draft should 
 - Uber additionally uses planning-time early termination for eligible newest-first limited queries. Selected splits still use Presto's normal scheduler.
 - Current OSS already supports end-to-end Presto querying, including mixed KV-IR/archive queries, typed exact-path access, filter/projection pushdown, typed wildcard value search, complete-event JSON, and pluggable metadata/split filtering.
 - Uber production adds advanced metadata planning, billion-file scale, early termination, routing, reliability, and operational controls.
-- CLP's low incremental storage cost enables flexible tier management: offboarding from Pinot, selective rehydration, and dual ingest where appropriate.
-- The Kafka-fed hot/indexed path can experience rare loss during extreme overloads; the CLP-backed object-storage path does not share that peak-loss mode.
-- Extreme bursts often consist of loop-generated repetition. Higher repetition increases CLP's compression ratio, so raw-volume spikes need not produce proportional object-storage traffic; the object-storage path also retains throughput headroom.
-- Archive schemas, log-format patterns, frequencies, and related metadata create a future path toward compact LLM context preloading, semantic search, and summarization, but this is not presented as deployed or benchmarked behavior.
 
 ### Central thesis
 
@@ -55,20 +55,20 @@ This document is intentionally more detailed than the article. The draft should 
 
 ## 2. Publication Narrative and Boundaries
 
-The article answers one question:
+The article answers one end-to-end question:
 
-> How can Uber make approximately 25 PB of continuously evolving logs per month searchable through familiar SQL without flattening the data, indexing every field, or building a correspondingly enormous query cluster?
+> How can Uber accept continuously evolving logs from independent producers, preserve them economically, and make approximately 25 PB per month searchable through familiar SQL without flattening the data, indexing every field, or building a correspondingly enormous query cluster?
 
 The causal answer is:
 
-1. Uber's logs span natural-language messages, enriched events, and polymorphic JSON controlled by independently deployed producers.
-2. Uber preserves one SQL entry point while routing between Pinot's indexed path and Presto Native with CLP's searchable KV-IR/archive path.
-3. Fresh logs remain searchable in KV-IR while asynchronous aggregation produces immutable archives.
-4. Current OSS can query a mix of both formats; Uber removes overlapping KV-IR inputs once their archived copy is authoritative.
+1. Uber's independently deployed producers emit natural-language messages, enriched events, and polymorphic JSON that cannot share one complete global schema.
+2. Per-host collectors preserve this evolving structure, enrich events, and incrementally compress them into appendable KV-IR; periodic data uploads and Kafka metadata updates make growing compressed files discoverable without closing them.
+3. Uber preserves one SQL entry point while a metastore selects searchable KV-IR/archive inputs for Presto Native with CLP.
+4. Current OSS can query a mix of both CLP formats; Uber removes overlapping KV-IR inputs once their archived copy is authoritative.
 5. CLP columnizes observed structure within archive-local, schema-homogeneous tables.
-6. Connector rewriting carries SQL intent into split-local storage resolution and encoded execution.
+6. Connector rewriting carries SQL intent into split-local storage resolution and encoded execution instead of forcing row-oriented JSON materialization.
 7. Metadata pruning and planning-time early termination avoid work before workers read object storage.
-8. Compression, work avoidance, and encoded execution explain the five-worker footprint.
+8. Ingestion/storage separation, compression, work avoidance, and encoded execution together explain the production architecture and five-worker query footprint.
 
 ### Intended audience
 
@@ -78,19 +78,20 @@ The causal answer is:
 
 ### Article shape
 
-- Opening: 180–220 words
-- Platform-data spectrum: 280–330 words
-- SQL tension: 260–320 words
-- Query architecture: 220–280 words, plus one figure
-- Native schema-less access: 480–560 words, including one SQL example
-- Work avoidance: 400–480 words, plus one figure
-- Production/OSS boundary: 220–280 words
+- Opening: 170–210 words
+- Evolving logs and schema coordination: 300–360 words
+- Ingestion lifecycle: 240–300 words, plus one figure
+- SQL entry point and storage paths: 230–280 words
+- Native schema-less access: 400–470 words, including one SQL example
+- Work avoidance: 340–420 words, plus one figure
+- Production/OSS/collaboration boundary: 280–340 words
 - Conclusion: 130–170 words
-- Total target: 2,400–2,700 words; 3,000-word hard maximum
+- Total target: 2,200–2,600 words; 3,000-word hard maximum
 
 ### Story boundary
 
 - Production architecture case study, not a complete connector guide
+- Explain the per-host collector-to-KV-IR-to-archive lifecycle, but treat the metastore implementation as a black box rather than turning the article into a complete ingestion-service reference
 - No full Iceberg Variant or Parquet shredding comparison
 - No complete CLP archive-format derivation
 - No formal early-termination proof
@@ -163,16 +164,28 @@ Research reference: [μSlope: High Compression and Fast Search on Semi-Structure
 
 ## 4. Ingestion and Storage Lifecycle
 
+### Per-host collection and publication
+
+- A log collector runs on every host and monitors logs from containers on that host.
+- The collector enriches events before incrementally compressing them into KV-IR.
+- KV-IR is compressed incrementally and appendable: the collector keeps the active compressed file open as new records arrive.
+- On a configurable timeout, the collector uploads the current file extent without closing the active stream.
+- Subsequent updates publish the newly appended data.
+- Every file update also emits a metadata update to a Kafka topic.
+- The metastore consumes these updates so the query path can discover the growing KV-IR files.
+- The article treats the metastore as a black box; Pinot implementation details are irrelevant to this ingestion explanation.
+
 ### KV-IR
 
-- [KV-IR](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) is the key-value internal-representation stream format for dynamically structured logs.
+- [KV-IR](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) is the streaming-compressed key-value internal-representation format for dynamically structured logs.
 - Present KV-IR as an advancement of the streaming CLP file introduced in Part I, extended to semi-structured logs.
 - KV-IR buffers less data than the archive format and is suitable for low-latency and resource-constrained ingestion.
 - Fresh KV-IR files are searchable; users do not wait for archive creation.
 
 ### Archive aggregation
 
-- Asynchronous jobs aggregate KV-IR files into immutable CLP archives.
+- Asynchronous jobs transform already compressed KV-IR files into denser immutable CLP archives.
+- Aggregation improves long-term compression density and layout; it does not mark the beginning of compression.
 - Archives provide the longer-term compression and search representation.
 - Current freshness through the KV-IR path is approximately 30 seconds to a few minutes.
 
@@ -196,6 +209,8 @@ Research reference: [μSlope: High Compression and Fast Search on Semi-Structure
 
 ## 5. Query Architecture and Tier Management
 
+The current Part III article treats the metadata implementation as a black-box **metastore** and does not explain Pinot or broader tier-management internals. The details below are retained only as background and capability guardrails.
+
 ### User-facing architecture
 
 - Observability UI
@@ -207,9 +222,8 @@ Use QueryRunner attribution carefully. It participates in parsing, governance, r
 
 ### Routed serving paths
 
-- **Pinot:** indexed, random-access path, commonly used when that access pattern is justified
-- **Presto Native with CLP:** searchable KV-IR and immutable-archive path in object storage, serving recent and older data
-- These paths have different strengths, not exclusive temperature ownership. Recently produced data is searchable through KV-IR, and selectively dual-ingested data can be available through both.
+- **Metastore:** discovers relevant KV-IR and archive inputs from metadata updates; its internal implementation is outside the article.
+- **Presto Native with CLP:** searches the selected recent KV-IR and immutable-archive data in Uber's internal object storage.
 - Users retain one SQL-oriented experience rather than choosing a storage engine directly.
 
 ### Worker, connector, and reader ownership
@@ -718,7 +732,7 @@ Do not revisit semantic search in the conclusion. The article must end on the pr
 - Early termination is Uber production behavior, not current OSS.
 - Mixed KV-IR/archive queries are current OSS.
 - Offboarding, rehydration, dual ingest, and overlap precedence are Uber tier-management policies.
-- Pinot and CLP are routed paths with different strengths, not exclusive hot versus warm/cold owners.
+- In the Part III ingestion narrative, keep the metadata backend behind the generic **metastore** boundary.
 
 ### Claim strength
 
@@ -799,4 +813,4 @@ Do not revisit semantic search in the conclusion. The article must end on the pr
 
 ## 19. Working Abstract
 
-Uber and YScope expanded CLP from its original Spark deployment to machine-learning, streaming, and data platforms that collectively generate approximately 25 PB of raw logs per month. Fresh logs remain searchable in KV-IR files before asynchronous aggregation into immutable CLP archives, and one open-source connector query can span both formats without duplicate events. Within each archive, CLP groups recurring key-and-type schemas into encoded tables and columnizes every schema node. The Presto Native connector rewrites supported SQL expressions, resolves paths against split-local structure, and pushes filtering and projection into CLP's encoded execution. Metadata pruning and Uber's planning-time early termination avoid files and splits before object-storage reads begin. In production, CLP reduces the monthly raw volume to approximately 750–850 TB, while five lightly utilized Presto Native workers serve recent and older data through searchable KV-IR files and immutable archives directly from object storage without local staging or an archive cache.
+Uber and YScope expanded CLP from its original Spark deployment to machine-learning/AI, streaming, and data platforms that collectively generate approximately 25 PB of raw logs per month. A collector on every host monitors and enriches container logs, incrementally compresses them into an appendable KV-IR file, periodically uploads the growing compressed file without closing it, and publishes metadata updates through Kafka. Fresh logs remain searchable in KV-IR before asynchronous aggregation transforms them into denser immutable CLP archives, and one open-source connector query can span both formats without duplicate events. Within each archive, CLP groups recurring key-and-type schemas into encoded tables and columnizes every schema node. The Presto Native connector rewrites supported SQL expressions, resolves paths against split-local structure, and pushes filtering and projection into CLP's encoded execution. Metadata pruning and Uber's planning-time early termination avoid files and splits before object-storage reads begin. In production, CLP reduces the monthly raw volume to approximately 750–850 TB, while five lightly utilized Presto Native workers serve recent and older data directly from Uber's internal object storage without local staging or an archive cache.

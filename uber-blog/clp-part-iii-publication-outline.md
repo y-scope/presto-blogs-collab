@@ -1,568 +1,301 @@
 # From 25 PB of Logs to Native SQL: CLP Part III Publication Outline
 
-- **Status:** Publication strategy synchronized with the current draft and knowledge base
-- **Audience:** Engineering readers familiar with SQL and large-scale data systems, but not necessarily with CLP or Presto Native internals
-- **Article target:** 2,400–2,700 words; 3,000-word hard maximum
-- **Primary goal:** Explain how Uber and YScope made continuously evolving logs queryable through Uber's SQL ecosystem while preserving CLP's compression and encoded execution
-- **Secondary goal:** Show how work avoidance, object-storage-aware design, and a specialized in-process reader produce a small query-compute footprint at petabyte scale
-- **Story boundary:** This is a production architecture case study, not a storage-format comparison or connector-development guide
+- **Status:** Revised around the end-to-end ingestion, connector, and search story
+- **Audience:** Infrastructure, observability, storage, data-platform, streaming, and ML/AI engineers; engineering leaders evaluating cost and operability; Presto and CLP users interested in a production deployment
+- **Target length:** 2,200–2,600 words; 3,000-word hard maximum
+- **Article type:** Production architecture case study
 
----
+## Story at a Glance
 
-## Intended Audience and Reading Level
+The article follows logs from independent producers to a SQL result. Readers should leave with three connected takeaways:
 
-### Primary audience
+1. **Ingestion:** CLP accepts evolving, polymorphic logs without requiring a global producer schema. KV-IR compresses events incrementally for freshness; asynchronous aggregation transforms those streams into denser long-term archives.
+2. **SQL integration:** The Presto Native connector exposes CLP data through Uber’s existing SQL ecosystem without first expanding every event into row-oriented JSON.
+3. **Search:** Metadata planning, split-local resolution, and encoded execution eliminate enough work that five lightly utilized workers can serve the currently onboarded corpus.
 
-- Uber Engineering readers: infrastructure, observability, storage, data-platform, streaming, and machine-learning engineers.
-- Engineering leaders evaluating how architectural choices affect cost, operability, and adoption at scale.
-- Readers interested in the evolution of Uber's logging platform after Parts I and II.
+The causal spine is:
 
-### Secondary audience
+> Many independently evolving producers create a schema-coordination problem. CLP preserves their structure during ingestion. The Presto connector carries SQL intent into that storage model. Metadata and encoded execution then avoid enough work to keep the query tier small.
 
-- Operators and architects of large logging or event-data systems.
-- Presto and CLP users interested in a production deployment rather than connector internals.
-- Open-source readers evaluating whether the public CLP connector is relevant to their workloads.
+This is broader than the previous query-serving outline. Ingestion is now a first-class architectural contribution, but every section must still advance the same producer-to-query story.
 
-### Assumed knowledge
+## Scope and Claim Boundaries
 
-- Familiarity with SQL queries, object storage, distributed workers, and hot/warm/cold data tiers.
-- General awareness that query engines can push filtering and projection into storage readers.
+### Supported production facts
 
-### Not assumed
+- Currently onboarded ML/AI, streaming, and data-platform workloads produce approximately 25 PB of raw logs per month.
+- CLP reduces that volume to approximately 750–850 TB per month: roughly 29–33× compression and about 97% less storage.
+- Five 48-core Presto Native workers serve recent and older CLP data directly from Uber’s internal object storage, typically at approximately 5–10% CPU.
+- Recent events generally become searchable through KV-IR in approximately 30 seconds to a few minutes.
+- Uber’s metadata implementation manages billions of file records.
 
-- CLP's archive format, schema trees, encoded record tables, logtypes, or variable encodings.
-- Presto Native's coordinator/worker boundary, connector handles, or plugin loading.
-- Uber's QueryRunner, Pinot integration, logging appenders, or internal metastore.
-- Iceberg Variant, Parquet shredding, or the detailed comparison developed for the Presto community article.
+### Capability labels
 
-The article must be understandable without following its links. Define unfamiliar terms briefly at first use; link research, documentation, or source code for readers who want implementation depth.
+- **Current OSS:** Public connector and CLP behavior verifiable in code or documentation.
+- **Uber production:** Deployed extensions or policies that are not necessarily public.
+- **Future direction:** Compatible design work that is neither deployed nor promised.
 
----
+## Narrative Map
 
-## Editorial Strategy
+| Section | Reader question | Main contribution |
+|---|---|---|
+| Opening | How can a five-worker query tier serve this production volume? | Establishes the scale and previews ingestion, integration, and work avoidance as one lifecycle. |
+| 1. Evolving logs | Why can’t producers share a conventional table schema? | Defines semi-structured data, polymorphism, and the adoption constraint. |
+| 2. Ingestion | How do fresh events become searchable without blocking on archive construction? | Makes ingestion a co-equal pillar and explains KV-IR plus asynchronous aggregation. |
+| 3. SQL entry point | How do users query recent and archived representations without choosing one? | Places Presto Native and CLP inside Uber’s routed query ecosystem. |
+| 4. Native SQL | How does a SQL expression reach CLP’s encoded structure? | Shows that the connector preserves storage-native execution instead of wrapping JSON parsing. |
+| 5. Search | Why does most of the corpus never reach a worker? | Explains metadata pruning, safe Top-N early termination, split-local resolution, and encoded search. |
+| 6. Impact and OSS | What is measured, public, Uber-specific, and collaborative? | Closes the evidence loop and states capability boundaries. |
+| Conclusion | What is the transferable system lesson? | Reconnects producer flexibility, SQL usability, and economical search. |
 
-The article answers one production question:
+## Opening: Follow the Log Lifecycle
 
-> How can Uber make roughly 25 PB of continuously evolving logs per month searchable through familiar SQL without flattening the data, indexing every field, or building a correspondingly enormous query cluster?
+**Target:** 170–210 words
 
-The answer is causal rather than a list of platform features:
+### Goal
 
-1. Uber's logs span natural-language messages, enriched events, and polymorphic JSON whose producers evolve independently.
-2. Uber preserves one SQL entry point while routing between Pinot's indexed path and Presto Native with CLP's searchable KV-IR/archive path.
-3. Fresh logs remain searchable in streaming-capable KV-IR files while asynchronous aggregation creates immutable CLP archives; one current-OSS query can span a mix of both formats, while metadata removes overlapping inputs so results are never duplicated.
-4. CLP discovers and columnizes observed structure; the connector carries log-specific SQL intent through planning and pushdown into that storage model.
-5. Metadata pruning and planning-time early termination avoid files and splits before execution.
-6. The in-process connector dispatches mixed KV-IR/archive splits; CLP's streaming archive reader searches selected archive data directly from object storage.
-7. Compression, work avoidance, and encoded execution together explain the five-worker production footprint.
+Create the production question without implying that every query scans 25 PB.
 
-The Presto article's deeper Variant and shredding analysis should improve the accuracy of this story without becoming a section in it. For Uber readers, the relevant point is positive and compact: CLP is columnar by design across recurring, evolving schemas, so teams do not have to predict every useful field before ingestion.
+### Important points
 
-Assume the companion Presto article publishes first. Link it as **[PRESTO_BLOG_URL](PRESTO_BLOG_URL)** for readers who want the deeper Variant/shredding and connector discussion; replace the placeholder before publication.
+- Contrast 25 PB/month raw, 750–850 TB/month compressed, and five 48-core workers.
+- State that this is monthly ingest from onboarded workloads, not per-query scan volume.
+- Mention direct object-storage access without local staging or an archive cache.
+- Preview the three-part answer: schema-independent ingestion, storage-aware SQL integration, and search work elimination.
 
-### Narrative map
+### Takeaway
 
-| Section | Reader question | Why needed | Audience benefit | Story contribution |
-|---|---|---|---|---|
-| Opening | How can five workers serve this scale? | Create a concrete production mystery | Readers see the outcome before learning the machinery | Establishes scale, cost discipline, and the two-part answer: avoid work, then search encoded data |
-| 1. Data spectrum | What makes Uber's logs difficult? | Replace the false structured/unstructured binary with the actual workload | Platform engineers recognize schema ownership, polymorphism, and adoption constraints | Defines the data properties the query system must preserve |
-| 2. SQL tension | Why not use fixed columns or one JSON string? | Explain why ordinary table modeling loses either flexibility or execution efficiency | Readers understand why the problem is not solved by syntax alone | Creates the need for storage-aware schema-less SQL |
-| 3. Query architecture | Where does CLP sit in Uber's logging stack? | Place the solution inside the routed serving system and common query entry point | Readers understand path strengths, nonexclusive ownership, freshness, and object-storage flow | Connects the user experience to the physical serving architecture |
-| 4. Native schema-less SQL | How does a SQL expression reach CLP's encoded columns? | Prove that the SQL surface preserves rather than hides CLP execution | Readers can follow one query from typed accessors through pushdown to the reader | Supplies the central technical mechanism |
-| 5. Work avoidance | Why is the compute footprint so small? | Explain scale through specific elimination stages | Operators see what metadata, early termination, and streaming execution prevent | Resolves the opening mystery |
-| 6. Production and OSS | What is proven, and what can readers use? | Separate deployed evidence from public functionality and future work | Readers can evaluate maturity without conflating Uber extensions with OSS | Converts architecture into credibility and adoption value |
-| Conclusion | What should readers remember? | Compress the argument without introducing another roadmap | Readers leave with one durable systems lesson | Returns to the collaboration and production outcome |
+Compression is necessary, but the small query tier makes sense only when the full lifecycle is considered.
 
-### Presentation rules
+## 1. Evolving Logs Without a Global Schema
 
-- Lead with the production outcome, then reveal mechanisms in the order users encounter them.
-- Introduce a concept only when it explains adoption, query behavior, or resource use.
-- Prefer concrete examples—one polymorphic field, one SQL query, one Top-N plan—over exhaustive feature lists.
-- Use **CLP** consistently for the newer-generation system discussed here. Use **CLP-S** only when quoting a historical name or source that requires it.
-- Mark capabilities as **current OSS**, **Uber production**, or **future direction** at first mention.
-- Keep collaboration visible without turning the article into contributor history.
-- State scale honestly: 25 PB/month is produced by onboarded workloads, not scanned by every query.
+**Target:** 300–360 words
 
-### Section admission test
+### Goal
 
-For every section, ask:
+Show why independently deployed producers make schema evolution continuous rather than an occasional table migration.
 
-1. Which production question does this answer?
-2. Why is this the right point in the story to introduce the detail?
-3. What can the intended reader understand or decide afterward?
-4. Which later claim does this section make credible?
+### Important points
 
-Material that cannot answer all four belongs in documentation, the knowledge base, or a future article.
+- Summarize Parts I and II in no more than three sentences.
+- Show expansion into representative ML/AI, streaming, and data platforms without implying all Uber services are onboarded.
+- Explain how appenders and native bindings preserve messages while adding correlation, platform, application, job, host, and container context.
+- Define **semi-structured** and **polymorphic** after giving concrete message and JSON examples.
+- Explain why a central table schema creates coordination and why eager whole-document JSON processing loses selective execution.
+- Link the μSlope paper for the storage research.
 
----
+### Takeaway
 
-## Title Strategy
+The platform must preserve producer-controlled structure without turning application deployments into data-platform migrations.
 
-**Preferred:** **From 25 PB of Logs to Native SQL: Modernizing Logging at Uber with CLP (Part III)**
+## 2. Ingestion Without Producer Coordination
 
-The title leads with the approved production scale, promises a user-visible outcome, and preserves continuity with Parts I and II. “Native SQL” must be earned in the body: supported SQL expressions are resolved and pushed into CLP rather than evaluated as record-at-a-time JSON wrappers.
+**Target:** 240–300 words, plus one lifecycle figure
 
-**Alternative:** **How Uber Queries 25 PB of Evolving Logs with Presto and CLP**
+### Goal
 
-Use the alternative if “Native SQL” is judged ambiguous. It is more literal but less connected to the article's central insight that SQL carries storage-native operations.
+Make ingestion a first-class systems contribution and explain why the design remains simple as producer diversity grows.
 
----
+### Important points
 
-## Opening: The Scale–Simplicity Paradox
+- A log collector runs on every host and monitors logs from its containers.
+- The collector enriches events and incrementally compresses them into an appendable KV-IR file; the active file is already compressed as it grows.
+- On a configurable timeout, it uploads the current file extent without closing the stream and continues appending later events.
+- Each file update produces a metadata event on Kafka; the metastore consumes these updates for query discovery.
+- Fresh events become searchable in low-buffering, streaming-compressed KV-IR files.
+- Asynchronous aggregation later transforms the already compressed KV-IR inputs into denser immutable CLP archives; it is not where compression begins.
+- Explain the cadence tradeoff among freshness, compression, and object-storage request cost.
+- Current approved freshness is approximately 30 seconds to a few minutes.
+- The stable contract is structure preservation; producers do not need identical event shapes.
 
-**Target:** 180–220 words
+### Figure 1: Producer-to-storage lifecycle
 
-### Editorial necessity
+The figure should show:
 
-Create the mystery that powers the article: a large and structurally difficult workload is served by a surprisingly small query tier. Readers should want an architectural explanation rather than interpreting the figures as a benchmark boast.
+- Container logs on every host
+- Host-local monitoring and enrichment
+- Appendable streaming KV-IR compression inside the collector
+- Configurable uploads without closing the active file
+- Metadata updates through Kafka into the metastore
+- Searchable KV-IR in Uber’s internal object storage
+- Asynchronous archive aggregation
 
-### Presentation strategy
+Treat the metadata implementation as the **metastore**. Pinot is not part of the ingestion explanation and should not appear in the figure.
 
-- Open with the contrast among approximately 25 PB/month raw, 750–850 TB/month compressed, and five 48-core Presto Native workers.
-- State that typical CPU use is 5–10% and that object-storage access is intentionally paced because responsive latency—not maximum throughput—is the objective.
-- Establish direct object-storage search without local archive staging or caching.
-- Name the two mechanisms that the article will unpack: metadata avoids work, and CLP searches what remains in encoded form.
-- End by identifying the Uber–YScope collaboration and the article's question.
+### Takeaway
 
-### Required content
+Freshness and dense long-term storage operate at different cadences, allowing a simple producer contract without sacrificing searchability.
 
-- Scope the 25 PB figure to currently onboarded ML, streaming, and data-platform workloads.
-- Distinguish monthly raw production from the amount any one query reads.
-- Avoid repeating all detailed scale figures later in the opening; Section 6 will collect the proof.
-- Do not introduce ERTs, UDF names, plugin infrastructure, or early-termination rules yet.
+## 3. One SQL Entry Point Across Recent and Archived Data
 
-### Audience benefit and story contribution
+**Target:** 230–280 words
 
-- **Audience benefit:** Readers immediately understand why the system is operationally interesting.
-- **Story contribution:** Establishes the outcome that every later mechanism must explain.
+### Goal
 
----
+Place CLP inside the system users experience and explain why SQL clients do not select a storage engine or file format.
 
-## 1. From Spark Logs to a Spectrum of Platform Data
+### Important points
 
-**Target:** 280–330 words
+- Existing observability interfaces, query builders, and programmatic clients use Uber’s Presto-oriented ecosystem.
+- QueryRunner and related services participate in governance, routing, cluster selection, and failover.
+- For CLP data, the metastore identifies relevant KV-IR files and archives; Presto Native executes the resulting splits.
+- Treat the metastore backend as a black box whose planning contract matters more than its implementation.
+- One CLP query may contain both KV-IR and archive splits.
+- During aggregation overlap, the archived representation takes precedence only over its incorporated KV-IR inputs, so each event appears once.
+- End by explaining why a naive JSON compatibility layer would expand encoded data before filtering.
 
-### Editorial necessity
+### Takeaway
 
-Define the workload before discussing query architecture. The difficult property is not JSON itself; it is continuous structural and type evolution across independently deployed producers.
+Users retain one SQL experience while the platform selects physical storage and representation.
 
-### Presentation strategy
+## 4. From Polymorphic Logs to Native SQL
 
-Move from series continuity to workload diversity:
+**Target:** 400–470 words, including one SQL example
 
-1. Summarize Parts I and II in no more than three sentences.
-2. Show expansion from Spark into representative ML/AI, streaming, and data-platform families.
-3. Explain how appenders and native bindings enrich existing logs without application-wide rewrites.
-4. Use one message-oriented and one JSON-oriented example to establish the structure continuum.
-5. Define **semi-structured** and **polymorphic** only after readers have seen the examples.
+### Goal
 
-### Required content
+Prove that the connector carries SQL intent into CLP rather than evaluating record-at-a-time UDFs over reconstructed JSON.
 
-- Mention representative platforms—Michelangelo/Ray, Flink/Kafka, and Spark/Hudi—without implying all Uber services are onboarded.
-- Explain that platform integrations add correlation, application, job, host, container, and related context while preserving natural-language messages.
-- State that pattern configurations can become structured fields without rewriting individual logging calls.
-- Define polymorphism with one path taking different types across producers or versions.
-- Explain that historical and current records coexist, making evolution continuous rather than a periodic migration.
-- Link the μSlope paper as the deeper research reference and attribute YScope, the University of Toronto, and the relevant Uber teams.
+### Important points
 
-> At logging scale, schema evolution is not an occasional migration event. It is a continuous property of the data.
+- Each archive has an archive-local schema tree and schema-homogeneous encoded tables.
+- Records with the same keys and value types share a table; every observed schema node is columnized within that table.
+- One logical path can bind to multiple typed columns without creating one global sparse table.
+- CLP separates recurring natural-language patterns from typed variables.
+- An optional convenience schema is a late-bound view over existing columns, not a rewrite.
+- Typed accessors preserve polymorphism: `CLP_GET_STRING`, `CLP_GET_BIGINT`, and other verified public functions.
+- `CLP_WILDCARD_*_COLUMN()` searches typed values across fields when the key is unknown.
+- `CLP_GET_JSON_STRING()` reconstructs a complete event when required.
+- Use one query containing exact projection, an exact predicate, typed wildcard value search, a time/application filter, and `ORDER BY timestamp DESC LIMIT 100`.
 
-### Audience benefit and story contribution
-
-- **Audience benefit:** Platform engineers see both the adoption constraint and the data-model problem.
-- **Story contribution:** Defines what must survive the move into SQL: evolving paths, types, and natural-language context.
-
----
-
-## 2. When SQL Meets Schema-Less Logs
-
-**Target:** 260–320 words
-
-### Editorial necessity
-
-Explain why a conventional table schema or one JSON string cannot deliver both flexibility and storage-level execution. This creates the need for the connector without detouring into a general format comparison.
-
-### Presentation strategy
-
-- Start with Presto's ordinary planning contract: column names and result types must be known.
-- Contrast that contract with producer-controlled paths, nesting, types, case, symbols, and SQL keyword collisions.
-- Explain why central schema maintenance turns routine application changes into platform migrations.
-- Treat a JSON string as a compatibility representation, not a sufficient physical execution model.
-- Introduce the log-specific operations Uber needs, then explain why Presto remains strategically valuable.
-
-### Required content
-
-- Describe whole-document JSON cost precisely: repeated parsing and reconstruction, unused-field materialization, weaker field-level projection, and lost storage-native filtering.
-- Do not call Parquet Variant an opaque blob or introduce Iceberg shredding; that comparison belongs in the Presto article.
-- Frame key search, cross-field value search, and grep-like matching as required log-query semantics. Section 4 must label which interfaces are public, production-only, or future.
-- Preserve Presto's role: QueryRunner integration, policy, routing, failover, aggregation, joins, and existing clients.
-
-> The goal was not to make Presto accept JSON. It was to preserve Uber's SQL ecosystem while allowing CLP—not a generic JSON parser—to interpret and search the logs.
-
-### Audience benefit and story contribution
-
-- **Audience benefit:** Readers understand why the interface and storage engine must cooperate.
-- **Story contribution:** Creates the transition from the data problem to Uber's tiered query architecture.
-
----
-
-## 3. One Query Entry Point, Multiple Storage Tiers
-
-**Target:** 220–280 words, plus one architecture figure
-
-### Editorial necessity
-
-Place CLP inside the system users actually experience. The article should show that SQL clients do not choose a storage engine and that CLP-backed access is not synonymous with offline or staged access.
-
-### Presentation strategy
-
-- Use one diagram to connect clients, QueryRunner, Pinot, Presto Native workers, the in-process CLP connector, and object storage.
-- Explain the two routed paths' different strengths without presenting temperature ownership as exclusive.
-- Follow the CLP branch far enough to establish the worker/connector/reader ownership chain.
-- Close with freshness and publication-cadence tradeoffs.
-
-### Figure 1: Uber log-query architecture
-
-~~~text
-Observability UI       Platform Query Builder       Programmatic Clients
-         \                       |                         /
-                           QueryRunner
-                  policy · routing · failover
-                              |
-                +-------------+-------------+
-                |                           |
-              Pinot             Presto Native workers
-       indexed random access   in-process CLP connector
-                |                           |
-          streaming data          metadata-coordinated
-                                   mixed split planning
-                                      /           \
-                            searchable KV-IR   immutable CLP archives
-                                      \           /
-                                        object storage
-~~~
-
-### Required content
-
-- QueryRunner preserves one SQL entry point and chooses the backend.
-- Pinot provides indexed random access; Presto Native with CLP searches recent and older KV-IR/archive data from object storage.
-- Routing is not an exclusive temperature boundary. Recently produced data is searchable through KV-IR, and selectively dual-ingested data can be available through both paths.
-- Each Presto Native worker supplies compute and hosts the connector in-process. For archive splits, the connector opens the object-storage byte stream; CLP's streaming archive reader interprets and searches it as bytes arrive.
-- There is no local archive cache or disk staging in the described Uber query path.
-- Present KV-IR as an advancement of the streaming CLP file introduced in Part I, extending that low-buffering design to semi-structured logs.
-- Logs first land in searchable, streaming-capable KV-IR files and are asynchronously aggregated into immutable CLP archives.
-- **Current OSS:** The connector can plan and execute one query across a mixed set of KV-IR and archive splits.
-- During overlapping coverage, Uber metadata and query planning prioritize the archived representation and exclude incorporated KV-IR inputs. Nonoverlapping files from both formats may contribute to the same result, but each event appears once.
-- Current freshness through the KV-IR path is approximately 30 seconds to a few minutes.
-- Explain the aggregation tradeoff among compression, freshness, and object-storage request cost.
-- **Uber production:** Data that no longer justifies Pinot indexing can be offboarded to CLP object-storage access while remaining searchable. Selected data can later be “rehydrated” into Pinot when repeated low-latency access is again necessary.
-- Note that CLP's low incremental storage cost makes selective dual ingest practical for workloads that need indexed random access and durable CLP access at the same time.
-- Keep Pinot reuse of CLP ideas and implementation components to one clause; the indexing details remain out of scope.
-
-### Audience benefit and story contribution
-
-- **Audience benefit:** Readers understand the serving topology, tier boundaries, and freshness model.
-- **Story contribution:** Provides the system context needed to trace a SQL expression into CLP next.
-
----
-
-## 4. Bringing Native Schema-Less Data Access to Presto
-
-**Target:** 480–560 words, including one compact SQL example
-
-### Editorial necessity
-
-This is the central technical section. It must prove that SQL reaches CLP's encoded structure rather than wrapping row-at-a-time JSON evaluation in function syntax.
-
-### Presentation strategy
-
-Move from storage model to user syntax to execution:
-
-1. Explain CLP's intrinsic columnization in one compact paragraph.
-2. Describe optional conventional columns and schema-less access as complementary interfaces.
-3. Show one query using exact typed paths, wildcard value search, time/application filters, and Top-N.
-4. Reveal that the functions are plan markers.
-5. Trace the request through pushdown, split-local schema resolution, and encoded execution.
-6. End with one concise contributor/infrastructure paragraph.
-
-### Required content
-
-#### Storage model
-
-- A CLP archive contains an archive-level schema tree and many schema-homogeneous encoded tables.
-- Records with the same keys and value types share a table; every schema node is columnized within that table.
-- This avoids one global sparse union and does not require users to predict a promotion list before ingestion.
-- One logical path may bind to several encoded columns across schema-specific tables within or across archives.
-- CLP also separates recurring text patterns from typed variables inside string values; mention this briefly rather than re-explaining the compression algorithm from Parts I and II.
-- Do not describe the schema tree as one dataset-global structure.
-
-#### SQL surface
-
-- An optional convenience schema can expose selected path-and-type bindings as ordinary columns after archives are written; it changes the logical interface, not CLP's physical layout.
-- Paths outside that view remain reachable through schema-less accessors.
-- Use verified public names in the example unless Uber production syntax is explicitly confirmed: `CLP_GET_STRING(path)`, `CLP_GET_BIGINT(path)`, `CLP_GET_JSON_STRING()`, and typed `CLP_WILDCARD_*_COLUMN()` value search.
-- Typed accessors let Presto plan a stable result while preserving different types at the same logical path.
-- Keep current typed wildcard **value search across fields** separate from wildcard key discovery or general key/value projection.
-- If production-only key, regex, or message-search functions are discussed, label them as Uber production behavior and verify their exact semantics.
-- Link the already-published companion Presto article at **[PRESTO_BLOG_URL](PRESTO_BLOG_URL)** rather than importing its full Variant/shredding comparison.
-
-Use one query containing:
-
-- A timestamp range and application identifier.
-- Exact typed projection and a predicate on the same path.
-- Typed wildcard value search across fields.
-- `ORDER BY timestamp DESC LIMIT 100` to set up Section 5.
-
-#### Execution path
-
-Use this compact mechanism line:
+Use this compact execution chain:
 
 > **SQL expression → connector rewrite and pushdown → split-local schema resolution → encoded CLP execution**
 
-- The Java function bodies are planner markers, not record-at-a-time evaluators.
-- Constant paths, requested types, and supported predicates are retained in the scan.
-- At each split, CLP resolves paths against split-local structure; for archive splits, this maps them to existing encoded columns.
+- The Java function bodies are planner markers.
 - Unsupported residual expressions remain in Presto.
-- Selecting a complete event through JSON reconstruction requires more work than projecting one bound path.
-- Avoid claiming perfect byte isolation; say CLP minimizes unrelated decompression and scanning.
+- A Presto split is the unit assigned to a worker; resolution happens against each split’s local structure.
+- The connector runs in-process in Presto Native and invokes CLP’s native reader.
+- For archive splits, CLP searches compressed bytes from the object-storage stream without staging the complete archive.
+- Link the companion Presto article instead of importing its complete Variant/shredding or plugin-development discussions.
 
-#### Native integration and attribution
+### Takeaway
 
-- The connector plugin runs inside each Presto Native worker and links CLP as a shared library; CLP's streaming reader performs the storage-specific search.
-- In one short paragraph, credit YScope for leading the connector and named upstream work, IBM/the Presto community for infrastructure and review, and Uber/YScope for production integration.
-- Keep dynamic loading and connector serialization to one sentence; detailed connector mechanics belong in the Presto article.
+SQL supplies relational composition; CLP supplies semi-structured semantics and encoded physical execution.
 
-> SQL supplies the composition model; CLP supplies the schema-less semantics and encoded execution.
+## 5. Search by Eliminating Work
 
-### Audience benefit and story contribution
+**Target:** 340–420 words, plus one work-elimination figure
 
-- **Audience benefit:** Readers can connect user-facing SQL to physical column selection and understand why the UDF surface is not cosmetic.
-- **Story contribution:** Establishes how CLP preserves its storage advantages inside Uber's SQL stack, enabling the resource argument in Section 5.
+### Goal
 
----
+Resolve the five-worker question through specific mechanisms rather than an unexplained performance claim.
 
-## 5. Avoid Work, Then Execute the Rest Efficiently
+### Important points
 
-**Target:** 400–480 words, plus one work-elimination figure
+1. **File pruning:** The metastore uses time bounds, record counts, selected dimensions, available paths, and file-level statistics to remove impossible files before split scheduling.
+2. **Planning-time early termination:** For eligible newest-first limited queries, stop generating older splits only after proving that they cannot affect the result.
+3. **Split-local resolution:** Narrow each selected archive to relevant encoded tables and columns.
+4. **Encoded execution:** Apply supported filtering and projection before reconstructing requested values or complete events.
 
-### Editorial necessity
+Keep pruning and early termination distinct:
 
-Resolve the five-worker mystery with concrete mechanisms. Compression alone does not explain the serving footprint; the system must also prove which files, schemas, columns, and encoded values need no work.
+- Pruning proves a file cannot match a predicate.
+- Early termination proves an older candidate may match but cannot change an eligible global Top-N result.
+- Required conditions include append-only logs, trustworthy time bounds and counts, time-aware enumeration, a finite limit, and compatible filters.
+- If correctness cannot be proven, plan more files or use the complete candidate set.
+- The optimization changes which splits exist; it does not require ordered worker execution.
 
-### Presentation strategy
+Explain that archive metadata appears early and the reader can advance without backward seeks. Avoid claiming perfect byte isolation or zero object-store overhead.
 
-Move from coarse to fine elimination:
+### Figure 2: Work elimination
 
-1. Metadata pruning removes files that cannot match.
-2. Planning-time early termination avoids older splits that cannot change a Top-N result.
-3. Split-local schema resolution removes irrelevant tables and columns.
-4. CLP searches the remaining encoded data and reconstructs only requested values or matching events.
+```text
+SQL predicates and Top-N
+          |
+file-level metadata pruning
+          |
+correctness-preserving split early termination
+          |
+split-local table and column resolution
+          |
+streaming encoded CLP search
+          |
+small result returned to Presto
+```
 
-Then connect these stages to object-storage layout and resource governance.
+### Takeaway
 
-### Required content
+The connector’s value is not SQL syntax alone; it preserves opportunities to avoid I/O, decompression, parsing, and materialization at the appropriate layer.
 
-#### Metadata as part of query execution
+## 6. Production Impact, Open Source, and Collaboration
 
-- The metastore tracks source URIs and formats, KV-IR/archive precedence, time bounds, record counts, selected top-level dimensions, available fields, and useful statistics.
-- A pluggable implementation should support evolving indexed fields and incremental metadata results; do not turn this into a database-product tutorial.
-- Uber's implementation handles billions of file records, but detailed schema and resource sizing remain out of scope.
+**Target:** 280–340 words
 
-#### Pruning versus early termination
+### Goal
 
-- **Pruning** proves a file cannot match a predicate.
-- **Early termination** proves an older candidate may match but cannot change an eligible newest-first limited result.
-- State the important eligibility assumptions: append-only logs, finite `LIMIT`, trustworthy time bounds, time-aware enumeration, and compatible filters.
-- Planning stops producing older splits only after correctness is proven; selected splits still use Presto's normal scheduler.
-- If proof is unavailable, the system safely plans more data or falls back to the complete candidate set.
+Close the evidence loop and separate public capabilities from Uber extensions.
 
-#### Object-storage and encoded execution
+### Important points
 
-- CLP places its header, schema tree, dictionaries, and indexes up front, then supports forward sequential reading without backward seeks.
-- For archive splits, the connector opens the object-storage stream and CLP begins interpreting and searching as bytes arrive without staging the complete archive.
-- Compression reduces transferred bytes and scan work.
-- API pacing is deliberate governance of shared infrastructure, not evidence that worker CPU is the bottleneck.
+- Collect the approved storage, worker, utilization, and freshness figures without repeating the full opening.
+- Explain that object-storage access is deliberately paced because responsive latency, not maximum throughput, is the goal.
 
-### Figure 2: Query-work elimination
+**Current OSS:** mixed KV-IR/archive queries, typed exact paths, expression rewriting, filter/projection pushdown, typed wildcard value search across unknown keys, complete-event JSON, and pluggable metadata/split filtering.
 
-~~~text
-SQL predicates
-      |
-Metadata pruning
-(remove files that cannot match)
-      |
-Planning-time early termination
-(stop when older candidates cannot change Top-N)
-      |
-Split-local schema and column resolution
-      |
-Streaming encoded CLP search
-(selective reconstruction; no local staging/cache)
-      |
-Small result returned to Presto
-~~~
+**Uber production:** advanced metastore, billion-file scale, planning-time early termination, routing, reliability, and operational controls.
 
-> The architecture scales by proving which data does not need to be read, then executing the remaining search inside the compressed format.
+End with attribution:
 
-### Audience benefit and story contribution
+- YScope engineers led connector implementation.
+- IBM engineers and the Presto community supported native connector infrastructure and review.
+- YScope and Uber engineers extended and applied the architecture in production.
 
-- **Audience benefit:** Operators can attribute scale to specific planning and execution stages rather than an unexplained benchmark number.
-- **Story contribution:** Supplies the causal explanation for the production evidence collected in Section 6.
+### Takeaway
 
----
+Readers should know both why the deployment works and which parts they can use from open source today.
 
-## 6. Production Impact and Open-Source Boundary
-
-**Target:** 220–280 words
-
-### Editorial necessity
-
-Close the evidence loop and distinguish what readers can use from what Uber added for its environment. This section should build trust, not repeat every number in the opening.
-
-### Presentation strategy
-
-Use an evidence ladder: **approved production figures → current OSS → Uber extensions → bounded future direction**.
-
-### Required content
-
-#### Approved Uber production evidence
-
-- Approximately 25 PB/month of raw logs from onboarded workloads.
-- Approximately 750–850 TB/month compressed: roughly 29–33× compression and about 97% less storage.
-- Five 48-core Presto Native workers, typically at 5–10% CPU, serving recent and older CLP data directly from object storage.
-- Approximately 30-second-to-few-minute freshness through searchable KV-IR files, followed by asynchronous aggregation into immutable CLP archives.
-- Explain that responsive UX under deliberately paced object-storage access is the success criterion.
-- **Uber production resilience:** The Kafka-fed hot/indexed path can experience rare loss during extreme overloads, while the CLP-backed object-storage path does not share this peak-loss mode.
-- Explain why peak raw volume does not imply proportional CLP-backed object-storage traffic: bursts often contain loop-generated repetition, which raises CLP's compression ratio, and the object-storage path retains additional throughput headroom.
-
-Do not include the current `[TBD]` performance table. Add at most one representative-query measurement only if every value is available, uses one consistent query definition, and distinguishes raw logical scope from compressed physical bytes read.
-
-#### Current OSS
-
-- Link the public CLP connector plugin and main CLP repository.
-- Describe verified capabilities: end-to-end Presto access, native mixed KV-IR/archive queries, typed exact-path access, function rewriting, filter/projection pushdown, typed wildcard value search, complete-event JSON, and pluggable metadata/split filtering.
-
-#### Uber production extensions
-
-- Label advanced metadata planning, planning-time early termination, billion-file scale, routing, reliability, and operational controls as Uber deployment capabilities rather than current public behavior.
-- Keep the hot-tier loss and peak-compression behavior scoped to Uber's described deployment rather than presenting it as a universal Kafka or object-storage property.
-- State that Uber and YScope intend to contribute reusable components where practical without promising scope or timing.
-- Include the double-digit-petabyte partner statement only if separately approved and accurately scoped.
-
-#### Bounded future direction
-
-- Use one clearly labeled sentence to explain that CLP archive metadata—including schemas, log-format patterns, and frequencies—could preload LLMs with compact structural context, narrow candidates for semantic search, and summarize recurring behavior without processing every repeated event independently.
-- Do not claim this is deployed, GPU-free, or exceptionally inexpensive without a defined workload and measurement.
-
-### Audience benefit and story contribution
-
-- **Audience benefit:** Readers can distinguish demonstrated scale, usable open source, and deployment-specific engineering.
-- **Story contribution:** Resolves the article's credibility question and prepares a concise conclusion.
-
----
-
-## Conclusion: Schema-Less Does Not Have to Mean Opaque
+## Conclusion
 
 **Target:** 130–170 words
 
-### Editorial necessity
+### Goal
 
-Compress the story into a durable systems lesson. Do not revisit semantic search in the conclusion or introduce edge execution or another detailed roadmap after the production proof.
+Compress the article into one transferable system principle.
 
-### Presentation strategy
+### Important points
 
-- Return to the Uber–YScope collaboration.
-- Recap three ideas only: preserve evolving structure, carry SQL intent into CLP, and eliminate work before encoded execution.
-- Close by resolving the title's scale contrast.
-- Use at most one sentence to acknowledge future Pinot or broader CLP work without promising a venue.
+- Revisit the three connected requirements: producer independence, familiar SQL, and economical search.
+- Recap KV-IR plus archive aggregation, storage-aware connector execution, and work elimination.
+- Do not introduce resilience, LLM/semantic-search, edge execution, or another roadmap after the production evidence.
 
-### Required content
+### Closing idea
 
-- Appenders enrich logs without application-wide rewrites.
-- CLP preserves and columnizes evolving structure.
-- Presto connects that model to Uber's existing query ecosystem.
-- Metadata and CLP execution jointly explain the small serving tier.
-- End on the production callback: 25 PB/month is accessible through one SQL experience served by five lightly utilized workers.
-
-> Logs can retain their natural, evolving structure and still receive the projection, search, optimization, and composition expected from an analytical system.
-
-### Audience benefit and story contribution
-
-- **Audience benefit:** Readers leave with a transferable design principle rather than a product slogan.
-- **Story contribution:** Resolves the opening mystery: petabyte-scale logs do not inherently require a petabyte-scale query cluster.
-
----
-
-## Information Design
-
-Use only three aids:
-
-1. One tiered query-architecture figure in Section 3.
-2. One compact SQL example in Section 4.
-3. One work-elimination figure in Section 5.
-
-Remove the incomplete representative-performance table unless a complete, consistently scoped measurement is available. Avoid a storage-format diagram, connector-lifecycle checklist, full API table, metastore schema, or second SQL example.
-
----
-
-## Capability Labels
-
-| Label | Meaning | Examples |
-|---|---|---|
-| **Current OSS** | Verifiable in the public connector or CLP documentation | Mixed KV-IR/archive queries, typed accessors, rewriting and pushdown, typed wildcard value search, complete-event JSON, pluggable metadata |
-| **Uber production** | Deployed behavior not necessarily available publicly | Scale figures, overlap precedence, tier offboarding/rehydration, peak resilience, advanced metadata, early termination, routing and controls |
-| **Future direction** | Architecturally compatible but not promised | Broader key discovery, Pinot details, LLM context preloading, semantic search, and summarization |
-| **Research evidence** | Supported by the linked μSlope paper | CLP's compression and encoded-search design |
-| **Comparative or performance claim** | Requires a controlled definition and measurement | Query latency, pruning percentage, throughput, or comparison with another format |
-
----
+> Semi-structured logs can remain faithful to their producers, become part of an analytical SQL ecosystem, and still be served economically at production scale.
 
 ## Publication Guardrails
 
-- Use **CLP** consistently for the newer-generation engine; avoid alternating with CLP-S.
-- Scope 25 PB/month to onboarded workloads and never imply that each query scans that volume.
-- Keep raw volume, compressed footprint, and physical bytes read distinct.
-- Describe the authoritative schema tree as archive/split-local, not one dataset-global contract.
-- Explain that schema grouping is columnar by design without importing the full Iceberg/Parquet shredding comparison.
-- Use verified function names and distinguish current public value search from key discovery or general wildcard projection.
-- Do not describe planner-marker functions as record-at-a-time UDF execution.
-- Preserve the ownership chain: worker supplies compute; connector runs in-process; CLP streaming reader interprets and searches the byte stream.
-- Distinguish searchable KV-IR files from immutable CLP archives. State that current OSS can query a mix of both formats, and explain that Uber's overlap handling removes only incorporated KV-IR inputs so each event appears once.
-- Describe offboarding, selective rehydration, and dual ingest as Uber tier-management choices, not automatic current-OSS policies.
-- Do not present Pinot as exclusively hot or CLP as exclusively warm/cold; recent data is searchable through KV-IR, and selective dual ingest can make data available through both paths.
-- Keep rare hot/indexed-path loss, repetition-driven burst compression, and object-storage throughput headroom scoped to Uber's described deployment.
-- Distinguish logical column selection from exact physical byte isolation.
-- Distinguish metadata pruning from planning-time early termination.
-- Separate current OSS, Uber production behavior, and future directions at first mention.
-- Do not imply five workers are undersized or that higher throughput is the objective; resource restraint is intentional.
-- Preserve attribution among Uber, YScope, IBM/the Presto community, and other contributors without interrupting the system narrative.
-
----
-
-## Resolve Before Publication
-
-- Replace every `PRESTO_BLOG_URL` placeholder with the published companion Presto article URL and verify the link.
-- Reverify the public function names, dot-path syntax, and one-sided wildcard pattern used in the SQL example against the publication release.
-- Which key, regex, message, and cross-field operations are current Uber production behavior versus RFC or future design.
-- Whether the 5–10% CPU range and 30-second-to-few-minute freshness remain current for the stated deployment scope.
-- Final approval for the rare hot/indexed-path loss, CLP-backed peak-resilience, loop-burst compression, and object-storage throughput-headroom wording.
-- Final approval for offboarding, selective rehydration, and dual-ingest wording.
-- Whether one complete representative-query measurement is available; otherwise remove the performance table entirely.
-- Final wording and approval for the double-digit-petabyte partner statement.
-- Public-source or implementation-owner confirmation of the front-loaded archive metadata and no-backward-seek reader behavior.
-- Final contributor acknowledgments and organization naming.
-
----
+- Use **CLP**, not CLP-S, except in historically necessary quotations.
+- Scope 25 PB/month to currently onboarded workloads; never imply one query scans that volume.
+- Keep raw logical volume, compressed footprint, and physical bytes read distinct.
+- Scope the deployment to currently onboarded ML/AI, streaming, and data platforms; do not call it Uber’s entire logging infrastructure.
+- Describe the authoritative schema as archive/split-local, not dataset-global.
+- Distinguish current typed wildcard **value search across unknown keys** from future key discovery or general `{path, value}` projection.
+- Do not describe planner-marker functions as row-at-a-time UDF execution.
+- Preserve ownership: Presto Native supplies workers; the connector runs in-process; CLP interprets and searches storage bytes.
+- Distinguish metadata pruning from correctness-preserving early termination.
+- In the ingestion story, describe Pinot only through the generic **metastore** boundary; it is not a separate architectural pillar.
+- Separate current OSS, Uber production extensions, and future work at first mention.
+- Avoid “full CLP speed,” “data explosion,” or universal sub-second/few-second claims without a controlled definition and evidence.
+- Keep contributor attribution at the end rather than interrupting the architecture narrative.
 
 ## Out of Scope
 
-- Detailed Iceberg Variant or Parquet shredding comparison.
-- Full CLP archive-format or compression-algorithm derivation.
-- Presto Native connector lifecycle, packaging, or serialization guide.
-- QueryRunner internals beyond routing, policy, and failover.
-- Full Pinot schema discovery, Lucene tokenization, or hot-tier search design.
-- Complete Uber ingestion, metastore, routing, or observability architecture.
-- Formal early-termination proof or pseudocode.
-- Exhaustive UDF documentation.
-- Incomplete benchmark tables or unsupported comparative multipliers.
-- Detailed semantic-search, local/edge execution, or publication-roadmap promises.
-- Claims that thousands of Uber services are already onboarded.
+- Complete Iceberg Variant or Parquet shredding comparison
+- Full CLP format or compression-algorithm derivation
+- Presto Native connector packaging and development guide
+- QueryRunner internals beyond their role in the serving path
+- Formal early-termination proof or pseudocode
+- Exhaustive SQL function documentation
+- Incomplete benchmark dashboards
+- Detailed future semantic-search or LLM architecture
