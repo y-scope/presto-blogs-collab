@@ -34,43 +34,41 @@ Although KV-IR and archives differ physically, the connector exposes both throug
 
 ## Native Semi-Structured Querying with Presto
 
-The second blog showed how engineers view individual compressed logs. At Uber, the same data must also support projection of evolving fields, aggregation of recurring patterns, and analysis across files and time ranges for on-call diagnosis, experimentation, and broader analytics. Engineers can use Lucene-style searches with pipe commands or write SQL directly. Uber normalizes and validates both forms before sending the resulting SQL to Presto, where existing access controls and tooling apply.
+The second blog showed how engineers view individual compressed logs. At Uber, the same data must also let engineers select evolving fields, count recurring patterns, and analyze events across files and time ranges for on-call diagnosis, experimentation, and broader analytics. Some engineers use Lucene-style log searches, while others write SQL directly. Uber normalizes and validates both forms before sending SQL to Presto, where existing access controls and tooling apply.
 
-The [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) implements this abstraction. Each selected physical file becomes a **split** assigned to a Presto worker. A KV-IR split contains one logical log file, while an archive split may contain many. After consolidation, a logical file can remain in KV-IR until purged, even when already present in one or more archives. Uber's metastore selects one copy. An archive takes priority over KV-IR, and the latest archive wins when several contain the file. A query can therefore cover fresh and archived data without duplicate events.
+Presto must know the type of every SQL expression while planning a query, while a path in CLP may be absent or hold different types across events. An optional table schema can bind common path-and-type pairs, such as `timestamp` and `event.request_id`, to ordinary typed columns without rewriting CLP data.
 
-Presto must know an expression's result type when planning a query. In CLP data, however, a path may be absent or hold different types across events. Lakehouse users may recognize this from [Variant](https://parquet.apache.org/docs/file-format/types/variantencoding/), whose values retain nested types, and optional Parquet [Variant shredding](https://parquet.apache.org/docs/file-format/types/variantshredding/), which materializes selected paths. The preceding **[PrestoDB blog](PRESTO_BLOG_URL)** compares Variant and shredding with CLP.
+With or without that schema, the current [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) provides [typed functions](https://docs.yscope.com/presto/connector/clp.html). A function can name an exact path, including one already bound as a column, use a wildcard for a variable path segment, or search compatible values across every field. CLP already supports inferring value types from query expressions, and exposing that capability through the Presto connector is on our to-do list.
 
-Until PrestoDB supports Variant end to end, the connector exposes common path-and-type pairs as table columns and accesses other paths through [typed functions](https://docs.yscope.com/presto/connector/clp.html). `CLP_WILDCARD_STRING_COLUMN()` searches strings without an exact field name, while `CLP_GET_JSON_STRING()` returns a complete event. Future Variant operators could replace the exact-path accessor syntax. CLP would still execute wildcard-key searches efficiently against its native storage. Queries can combine these forms:
+One query can combine these access patterns:
 
 ```sql
 SELECT
-    timestamp,
-    application_id,
-    CLP_GET_STRING('event.request_id') AS request_id,
-    CLP_GET_BIGINT('event.status_code') AS status_code
+    timestamp, -- optional-schema timestamp column
+    event.request_id, -- optional-schema string column
+    CLP_GET_STRING('event.request_id'), -- schema-bound path via typed function
+    CLP_GET_JSON_STRING() AS event -- complete event without declaring its schema
 FROM clp.platform_logs
 WHERE timestamp >= current_timestamp - INTERVAL '30' DAY
-  AND application_id = 'example-application'
-  AND CLP_GET_BIGINT('event.status_code') >= 500
-  AND CLP_WILDCARD_STRING_COLUMN() LIKE 'OutOfMemory%'
+  AND CLP_GET_BIGINT('event.*.status_code') >= 500 -- wildcard path, integer value
+  AND CLP_WILDCARD_STRING_COLUMN() LIKE 'OutOfMemory%' -- string value in any field
 ORDER BY timestamp DESC
 LIMIT 100;
 ```
 
-These user-defined functions (UDFs) do not materialize complete events before accessing fields. The connector passes the requested paths and predicates to CLP. [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) gives the full rewriting and pushdown walkthrough.
+Here, **native** applies at two levels. At the SQL level, users combine ordinary columns with expressions for evolving paths.
 
-In production, each query passes through four stages:
+At the execution level, the connector carries field requests and filters directly into CLP. It does not first pass every event through a generic serializer/deserializer (SerDe) to materialize a row. Nor does it reconstruct JSON merely to call `JSON_EXTRACT_SCALAR()`. CLP searches the encoded representation and reconstructs only the requested results.
 
-1. **Analyze.** Identify metastore filters, work CLP can perform, and whether the query supports Top-N file skipping.
-2. **Select.** Choose physical KV-IR files and archives, resolving overlapping logical-file coverage before creating splits.
-3. **Scan.** Stream selected compressed files from object storage while CLP applies filters and projections.
-4. **Finish.** Reconstruct matching results, then let Presto evaluate any expressions and operators not pushed into CLP.
+[YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) explains the underlying query rewriting. The preceding **[PrestoDB blog](PRESTO_BLOG_URL)** compares CLP with [Variant](https://parquet.apache.org/docs/file-format/types/variantencoding/) and explains how future Variant operators could simplify exact-path access.
+
+Together, the SQL interface and direct CLP execution provide native semi-structured querying. At Uber's scale, the next challenge is to reduce how many files and encoded values each query touches.
 
 ## Exploiting Data Knowledge at Every Layer
 
-Queries with selective filters run efficiently on five workers because three layers reduce how much data each query must process.
+That reduction happens at three layers.
 
-First, Uber's metastore tracks each file's location, format, event-time bounds, event counts, indexed fields and paths, and other statistics across billions of records. When a query's time, application, host, job, or correlation-ID filters cannot match a file's metadata, Presto does not create a split or read the object. This is file pruning. The open-source connector is agnostic to the metadata provider, so each deployment can plug in an implementation suited to its own catalog and storage system.
+First, Uber's metastore tracks each file's location, format, event-time bounds, event counts, indexed fields and paths, and other statistics across billions of records. When a query's time, application, host, job, or correlation-ID filters cannot match a file's metadata, Presto does not create a **split**—a file-processing task assigned to one worker—or read the object. This is file pruning. The open-source connector is agnostic to the metadata provider, so each deployment can plug in an implementation suited to its own catalog and storage system.
 
 Second, most log queries ask only for the latest matching events:
 
@@ -167,7 +165,7 @@ CLP could perform these operations over filtered paths, unique logtypes, diction
 
 ## Open Source and Collaboration
 
-The core query path is open source. [CLP](https://github.com/y-scope/clp) provides semi-structured compression and search, and the [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) presents KV-IR and archives through one Presto interface. It supports typed paths, wildcard-key value searches, complete-event reconstruction, and filter and projection pushdown. Deployments can integrate their own metadata and split providers.
+The core query path is open source. [CLP](https://github.com/y-scope/clp) provides semi-structured compression and search, and the [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) presents KV-IR and archives through one Presto interface. It supports typed exact and wildcard paths, typed value searches across all fields, complete-event reconstruction, and filter and projection pushdown. Deployments can integrate their own metadata and split providers.
 
 Uber's production deployment adds a metastore that manages billions of file records and performs Top-N file skipping. The query layer above it handles routing, reliability, and operational controls. This production foundation also gives us a practical starting point for the storage and agent improvements described above. We are still developing and evaluating those improvements.
 

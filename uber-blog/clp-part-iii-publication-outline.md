@@ -31,7 +31,7 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
 
 ## Capability Boundary
 
-- **Current open source:** CLP KV-IR and archives, mixed-form queries, typed paths, filters and projections pushed into CLP, typed value search without an exact key, complete-event JSON, and pluggable metadata and split filtering.
+- **Current open source:** CLP KV-IR and archives, mixed-form queries, typed exact and wildcard paths, typed value search without a known path, complete-event JSON, filters and projections pushed into CLP, and pluggable metadata and split filtering.
 - **Uber production:** Collection and enrichment, metadata publication, archive orchestration, mixed-form precedence, a metastore that manages billions of file records and performs latest-first limit (Top-N) file skipping, plus a query layer that handles routing, reliability, and operational controls.
 - **Further development:** Metadata-guided tiering and archive grouping build on deployed storage workflows. Pattern discovery, semantic search, and summaries build on production MCP traffic and existing CLP metadata. Their more advanced forms still need development and evaluation.
 
@@ -78,24 +78,20 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
 - **Why:** Uber's tools and programmatic clients already depend on Presto access control, planning, routing, aggregation, and SQL tooling.
 - **Important points:**
   - Bridge from Part II's individual-log viewing to broader analysis across files and time ranges: exploration, experimentation, analytics, and production diagnosis.
-  - Users may submit Lucene-style searches with pipe commands or write SQL directly. Uber normalizes and validates both forms before sending the resulting SQL to Presto.
-  - Use that normalization to bridge log-oriented workflows into the broader Presto ecosystem.
-  - The connector analyzes SQL to map top-level-key predicates to Uber's metastore, recognize early-termination shapes, and carry typed-field, wildcard, and log-template predicates to CLP.
-  - Uber's metastore narrows candidate KV-IR and archive files. Presto schedules splits, CLP executes supported scans, and Presto performs the remaining computation.
-  - Treat this as a preview; Section 4 explains the planning and execution layers.
-  - Each selected physical file becomes one split assigned to a Presto worker. A KV-IR split contains one logical log file, while an archive split may contain many.
-  - Explain the overlap window: after consolidation, a logical file can remain in KV-IR until purged, even when already present in one or more archives.
-  - State the full logical-file precedence rule: an archive takes priority over KV-IR, and the latest archive wins when several contain the same file. Select one copy so a query can cover fresh and archived data without duplicate events.
-  - Define native semi-structured querying as carrying typed paths, predicates, and projections into split-local encoded execution instead of reconstructing every event for generic JSON extraction.
-  - Explain the SQL interface compactly: common path-and-type pairs appear as table columns; typed functions access other paths; wildcard functions search without an exact key.
-  - Refer to the Section 2 storage concepts through “path-and-type map,” “column groups,” and “recurring text patterns” rather than requiring readers to remember MST and ERT.
-  - Use one SQL example with typed paths, wildcard value search, filters, and Top-N.
-  - State that native Variant operators can replace exact-path accessor syntax once Presto supports them end to end; wildcard-key search and CLP-native execution remain storage-specific.
-  - Refer detailed Variant-layer, physical-scan, and connector-boundary discussion to the earlier PrestoDB blog.
-  - Keep the YScope-blog handoff compact: UDFs do not materialize complete events; the connector passes requested paths and predicates to CLP; the earlier blog provides the rewriting walkthrough.
-  - The connector adds typed SQL access to CLP. Presto supplies the remaining relational semantics.
-  - State the consequence of rewriting and pushdown without repeating the optimizer walkthrough: supported intent reaches the split-local native scan, while unsupported expressions remain in Presto.
-  - Native workers invoke CLP against compressed object-storage streams without staging complete archives.
+  - Users may submit Lucene-style searches or write SQL directly. Uber normalizes and validates both forms before sending SQL to Presto.
+  - Organize the field interface by how precisely a query can name a field, rather than presenting a function inventory:
+    1. An optional table schema binds frequently used path-and-type pairs to ordinary typed columns without rewriting CLP data.
+    2. Typed functions access known exact paths with or without an optional schema, including paths already exposed as columns.
+    3. A wildcard expression can replace a variable segment within a path.
+    4. Typed wildcard functions search compatible values when the path is completely unknown.
+    5. Complete-event JSON remains available as a projection.
+  - State the capability boundary once: CLP can infer value types from a query, while the current Presto connector still requires typed SQL functions. Describe exposing inference through the connector as being on our to-do list.
+  - Use one SQL example showing an ordinary column, an exact path, a wildcard path, any-path typed value search, complete-event JSON, and Top-N.
+  - Label each access pattern with a short same-line SQL comment. Do not repeat those explanations below the query or introduce optimizer terminology there.
+  - Keep Variant to one contextual sentence. Refer detailed Variant and shredding discussion to the earlier PrestoDB blog.
+  - Define “native” in two senses: the SQL interface feels familiar, and execution reaches CLP's encoded storage directly. These are not wrappers around `JSON_EXTRACT_SCALAR()` and do not first pass every event through a serializer/deserializer (SerDe) to create a generic row. CLP reconstructs only requested results. Refer rewriting mechanics to YScope's earlier blog.
+  - End by summarizing both halves of native semi-structured querying: a familiar SQL interface and direct CLP execution. Transition to the need to reduce the files and encoded values each query touches at Uber's scale.
+  - Define `split` in Section 4, where file pruning first requires the term. Introduce Top-N file skipping there as well.
 - **Takeaway:** Presto supplies the common relational system while the connector preserves CLP-native execution.
 
 ## 4. Exploiting Data Knowledge at Every Layer
