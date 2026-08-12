@@ -1,4 +1,4 @@
-# Fresh Logs, Dense Archives, Native Semi-Structured Querying with Presto: CLP at Uber (Part III)
+# Native SQL over Petabyte-Scale Semi-Structured Logs: CLP and Presto at Uber (Part III)
 
 **Document status:** Working publication draft
 
@@ -16,35 +16,19 @@ The [second blog in the series](https://www.uber.com/gb/en/blog/modernizing-logg
 
 Requiring one global table schema would turn routine application changes into coordinated migrations. Storing each event as an untyped JSON string avoids those migrations, but every query must parse the string and rediscover its fields and types. CLP takes a third approach: it records structure as events arrive without requiring one schema for the entire dataset.
 
-## Fresh Logs: Searchable Before Archiving
+## Compressed and Queryable as Data Arrives and After Consolidation
 
-CLP uses a two-phase approach so logs remain compressed and searchable before archive construction. First, collectors stream events into appendable, compressed [**key-value intermediate representation (KV-IR)**](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) files that remain searchable while growing. Later, consolidation combines groups of closed KV-IR files into immutable, columnar archives for even better compression and faster search. Uber's metastore tracks both.
+A query may span newly emitted events and older consolidated data. CLP keeps both queryable through two compressed storage forms. Host log collectors stream events into appendable [**key-value intermediate representation (KV-IR)**](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) files. Later, Uber's aggregation service selects closed KV-IR files, and a worker combines each group into an immutable, columnar CLP archive optimized for compression and search. Consolidation runs asynchronously, so queries continue using KV-IR while the archive is built.
 
-KV-IR extends the message representation introduced in the [first blog in this series](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/) to key-value events and carries their evolving structure in the same compressed stream. When an event introduces a new path or value type, KV-IR first writes the corresponding schema-tree update into the stream. Each event then references that streamed structure alongside its encoded values. CLP can therefore decode every readable part of the growing stream with a complete schema tree.
+KV-IR stores structural updates—the paths and value types observed so far—in the same compressed stream as encoded values. Each update appears before the first event that uses it, so the file remains self-describing and searchable as data arrives. Configurable triggers upload the current KV-IR contents without closing the local stream. As more events arrive, subsequent uploads replace the same object with a longer snapshot. Once Uber's metastore processes a metadata update, queries can find the new events, typically within 30 seconds to a few minutes of being emitted.
 
-In the current deployment, a collector on every host performs CLP compression instead of each application's log appender. The collector monitors container logs, enriches events, and appends them to compressed KV-IR. Because the collector runs outside the application container, it can continue compressing and publishing logs the application emitted before the container exited.
+Archive construction is efficient because CLP processes encoded KV-IR directly instead of reconstructing and reparsing the original events. As it streams the inputs, CLP merges their path-and-type metadata into one archive-wide map, called the **Merged Schema Tree (MST)**. It appends each record to a columnar group for its shape, called an **Encoded Record Table (ERT)**. Keeping record shapes separate avoids filling one wide table with nulls. CLP also stores recurring text patterns, called **logtypes**, separately from typed variable values.
 
-As in the [second blog in this series](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/), configurable timers tell the collector to upload the latest KV-IR data and metadata without closing the local stream. Once Uber's metastore processes an upload's metadata update, queries can find the new events while they remain in KV-IR—typically within 30 seconds to a few minutes of being emitted.
+Combining similar files lets CLP deduplicate more recurring structure, logtypes, and values. Keeping files often queried together in the same archive can also reduce archive opens. Archive grouping must balance these benefits against object size, request cost, query latency, and parallelism.
 
-## Dense Archives: Asynchronous Columnar Consolidation
+![CLP storage flow from application containers through KV-IR to consolidated archives](figures/clp-storage-flow.svg)
 
-For longer retention, our aggregation service selects closed KV-IR files for consolidation. A worker then uses CLP to combine each selected group into an immutable archive. Consolidation runs asynchronously, and queries continue using KV-IR while the archive is built.
-
-The worker builds the archive directly from encoded KV-IR. As it streams each input, CLP merges its schema tree into the archive's **Merged Schema Tree (MST)**, a map of every observed path and value type. Each event's schema identifies the **Encoded Record Table (ERT)** for its exact combination of paths and types, then CLP appends encoded values to its columns. You can think of the archive as compact internal tables, one per record shape. Because each shape has its own ERT, absent fields do not create null entries. CLP also separates recurring static text patterns, called **logtypes**, from typed variables in separate ERT columns.
-
-When an archive combines similar log files, CLP can deduplicate more recurring structure, logtypes, and values across them. Grouping files queried together can also reduce the number of archives a query opens. Archive grouping must balance object size, request cost, query latency, and parallelism.
-
-```mermaid
-flowchart LR
-    applications["Application containers"] --> collector["Host log collector"]
-    collector -->|"Compress and publish"| kvir["Fresh, searchable<br/>CLP KV-IR"]
-    kvir --> consolidation["Asynchronous<br/>consolidation"]
-    consolidation --> archives["Dense, immutable<br/>CLP archives"]
-    collector -. "KV-IR metadata" .-> metastore["Uber's metastore"]
-    consolidation -. "Archive metadata" .-> metastore
-```
-
-**Figure 1: Fresh KV-IR remains searchable while asynchronous consolidation creates denser archives. Uber's metastore tracks both.**
+**Figure 1: The host log collector uploads updated KV-IR snapshots and their metadata. Uber's metastore selects closed files for asynchronous consolidation, which builds columnar CLP archives and returns their metadata to the metastore.**
 
 ## Native Semi-Structured Querying with Presto
 
@@ -97,7 +81,7 @@ With Presto's normal distributed **Top-N** execution, workers process every sche
 
 For Top-N queries that meet these conditions, Uber's metastore returns files in descending order of their maximum timestamps. Once the matching-event counts for the files considered so far reach `N`, the metastore sets the earliest event timestamp covered by those files as a **watermark**. The metastore includes every file whose event-time range overlaps the watermark. It stops only when the next file's maximum timestamp is earlier than the watermark. If row-level filters prevent the metastore from knowing how many events match, it keeps every file that remains after normal pruning. This optimization depends on accurate event-time bounds and matching-event counts for every file. Append-only writes and time ordering make those values easier to update as a file grows. Tighter, less-overlapping time ranges also let the metastore skip more older files. These properties help, but do not by themselves make the optimization correct. Uber runs this file-skipping logic in production. It is not yet part of the open-source connector.
 
-Finally, each archive begins with metadata that CLP reads before scanning the encoded event data. The MST maps paths and types to ERT columns. Indexed logtype and variable dictionaries describe recurring text and values. The connector uses the MST to find columns for exact paths or wildcard-key searches and rule out unrelated structures. CLP then uses its logtype and variable dictionaries to eliminate values that cannot match before advancing to the relevant ERTs and reconstructing results.
+Finally, each archive begins with metadata that CLP reads before scanning the encoded event data. Its path-and-type map identifies the relevant column groups. Indexed logtype and variable dictionaries describe recurring text and values. The connector uses the map to resolve exact paths or wildcard-key searches and rule out unrelated record shapes. CLP then uses the dictionaries to eliminate values that cannot match before advancing to the relevant column groups and reconstructing results.
 
 ```mermaid
 flowchart LR
@@ -114,8 +98,8 @@ flowchart LR
 
     subgraph execution["CLP compressed-stream execution"]
         direction TB
-        resolution["Resolve/prune MST paths<br/>Prune logtype/variable dictionaries"]
-        search["Advance to<br/>relevant ERTs"]
+        resolution["Resolve paths from schema map<br/>Prune logtype/value dictionaries"]
+        search["Advance to relevant<br/>column groups"]
         resolution --> search
     end
 

@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1520 615" role="img" aria-labelledby="title description">
+  <title id="title">CLP data flow from application containers to searchable KV-IR and consolidated archives</title>
+  <desc id="description">Application containers send log events to a host log collector. The collector uploads searchable KV-IR snapshots and sends metadata to Uber's metastore. The metastore selects closed KV-IR files for asynchronous consolidation. Consolidation reads those files, builds columnar CLP archives, and returns archive metadata to the metastore.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#30323a"/>
+    </marker>
+    <style>
+      .node { fill: #f4f2ff; stroke: #6d5bd0; stroke-width: 2; rx: 8; }
+      .source { fill: #fff1dc; stroke: #b7791f; }
+      .storage { fill: #dff3ee; stroke: #2f8578; }
+      .node-title { fill: #25262b; font: 600 24px Arial, sans-serif; text-anchor: middle; }
+      .edge { fill: none; stroke: #30323a; stroke-width: 2.5; marker-end: url(#arrow); }
+      .metadata { stroke-dasharray: 8 7; }
+      .dashed { stroke-dasharray: 8 7; }
+      .label-bg { fill: #ffffff; opacity: 0.96; rx: 4; }
+      .edge-label { fill: #30323a; font: 18px Arial, sans-serif; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect class="node source" x="60" y="35" width="300" height="90"/>
+  <text class="node-title" x="210" y="90">Application containers</text>
+
+  <rect class="node" x="60" y="225" width="300" height="110"/>
+  <text class="node-title" x="210" y="288">Host log collector</text>
+
+  <rect class="node storage" x="660" y="225" width="320" height="110"/>
+  <text class="node-title" x="820" y="273">
+    <tspan x="820" dy="0">Latest searchable</tspan>
+    <tspan x="820" dy="32">CLP KV-IR snapshot</tspan>
+  </text>
+
+  <rect class="node" x="60" y="465" width="300" height="110"/>
+  <text class="node-title" x="210" y="528">Metastore</text>
+
+  <rect class="node" x="660" y="465" width="320" height="110"/>
+  <text class="node-title" x="820" y="513">
+    <tspan x="820" dy="0">Asynchronous</tspan>
+    <tspan x="820" dy="32">consolidation</tspan>
+  </text>
+
+  <rect class="node storage" x="1130" y="465" width="330" height="110"/>
+  <text class="node-title" x="1295" y="513">
+    <tspan x="1295" dy="0">Consolidated, columnar</tspan>
+    <tspan x="1295" dy="32">CLP archives</tspan>
+  </text>
+
+  <path class="edge" d="M 210 125 L 210 225"/>
+  <rect class="label-bg" x="142" y="160" width="136" height="30"/>
+  <text class="edge-label" x="210" y="182">Emit log events</text>
+
+  <path class="edge" d="M 360 280 L 660 280"/>
+  <rect class="label-bg" x="416" y="233" width="188" height="42"/>
+  <text class="edge-label" x="510" y="250">
+    <tspan x="510" dy="0">Compress and upload</tspan>
+    <tspan x="510" dy="20">KV-IR snapshot</tspan>
+  </text>
+
+  <path class="edge metadata" d="M 210 335 L 210 465"/>
+  <rect class="label-bg" x="79" y="385" width="262" height="30"/>
+  <text class="edge-label" x="210" y="407">Update KV-IR snapshot metadata</text>
+
+  <path class="edge metadata" d="M 360 508 L 660 508"/>
+  <rect class="label-bg" x="410" y="474" width="200" height="30"/>
+  <text class="edge-label" x="510" y="496">Select closed KV-IR files</text>
+
+  <path class="edge dashed" d="M 820 335 L 820 465"/>
+  <rect class="label-bg" x="704" y="385" width="232" height="30"/>
+  <text class="edge-label" x="820" y="407">Read selected closed KV-IR</text>
+
+  <path class="edge" d="M 980 520 L 1130 520"/>
+  <rect class="label-bg" x="997" y="486" width="116" height="30"/>
+  <text class="edge-label" x="1055" y="508">Build archive</text>
+
+  <path class="edge metadata" d="M 660 532 L 360 532"/>
+  <rect class="label-bg" x="408" y="536" width="204" height="30"/>
+  <text class="edge-label" x="510" y="558">Update archive metadata</text>
+</svg>

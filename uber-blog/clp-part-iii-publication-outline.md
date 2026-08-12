@@ -1,4 +1,4 @@
-# Fresh Logs, Dense Archives, Native Semi-Structured Querying with Presto: CLP at Uber (Part III)
+# Native SQL over Petabyte-Scale Semi-Structured Logs: CLP and Presto at Uber (Part III)
 
 - **Type:** Production architecture case study
 - **Length:** 3,000-word hard cap, including final evidence
@@ -27,7 +27,7 @@ Readers should understand:
 - Earlier PrestoDB blog, **[PRESTO_BLOG_URL](PRESTO_BLOG_URL)**: current pluggable connector, CLP versus Variant, and connector-author lessons.
 - This article: Uber's production data flow, Presto query path, production evidence, and future direction.
 
-Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP logtype), and accessor material to explain the production scan.
+Introduce Merged Schema Tree, Encoded Record Table, and logtype once through plain-language descriptions. Later sections should use “path-and-type map,” “column groups,” and “recurring text patterns” unless the formal term is necessary.
 
 ## Capability Boundary
 
@@ -48,43 +48,31 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - Link the μSlope paper and attribute it inline to YScope, the University of Toronto, and Uber without listing individual teams here.
 - **Takeaway:** Preserve application-defined structure without turning application deployments into data-platform migrations.
 
-## 2. Fresh Logs: Searchable Before Archiving
+## 2. Compressed and Queryable as Data Arrives and After Consolidation
 
-- **Goal:** Show that high compression does not require sacrificing freshness.
-- **Why:** The two-phase design keeps growing data queryable, then reorganizes closed streams for denser storage and faster search.
+- **Goal:** Explain why queries can span newly emitted events and older consolidated data without waiting for one storage phase to finish.
+- **Why:** CLP keeps both stages compressed and queryable, then uses consolidation to improve compression and search.
 - **Important points:**
+  - Begin from the query requirement, not the ingestion pipeline: one query may span data still arriving and data already consolidated.
   - Expand key-value intermediate representation (KV-IR) at first use.
-  - YScope's CLP project supplies KV-IR and its encoder, reader, and search capabilities.
-  - Uber supplies collection, enrichment, publication, metadata integration, and object storage.
-  - KV-IR extends the first article's message-oriented intermediate representation to key-value events.
-  - KV-IR makes CLP's semi-structured storage model, described in the μSlope paper, readable while events are still being appended: schema-tree updates and per-event references into the evolving tree accompany encoded values.
-  - Schema-tree updates precede the events that reference them, keeping the tree fully materialized for every readable stream prefix.
-  - Unlike the design described in the second article, CLP compression now runs in the host log collector rather than the log appender.
-  - If an application container exits, the host collector can still compress and publish logs already emitted by that container.
-  - Host collectors append compressed KV-IR locally without closing the active stream.
-  - Summarize rather than re-explain the second article's upload mechanism: configurable timers publish current KV-IR data and metadata while the local stream remains open.
-  - Once Uber's metastore processes an upload's metadata update, queries can find the new events in roughly 30 seconds to a few minutes while they remain in KV-IR.
-- **Takeaway:** Fresh logs are already compressed, structured, and searchable before archive construction.
-
-## 3. Dense Archives: Asynchronous Columnar Consolidation
-
-- **Goal:** Explain what archive construction adds after streaming compression.
-- **Why:** Aggregation reorganizes already compressed streams for greater density and selective long-term search.
-- **Important points:**
+  - Define KV-IR directly for readers who have not read the earlier blogs: an appendable compressed stream containing structural updates and encoded values.
+  - Explain the structural guarantee in plain language: a path-and-type update appears before the first event that uses it, keeping the file self-describing and searchable as data arrives.
+  - Host log collectors stream events into KV-IR. Configurable triggers upload current contents without closing the local stream; later uploads replace the same object with a longer snapshot.
+  - Once Uber's metastore processes an upload's metadata update, queries can find the new events in roughly 30 seconds to a few minutes.
+  - Omit the historical move from log-appender compression to host-collector compression; it is not required for the query story.
   - Uber orchestrates centralized aggregation. CLP supplies the archive writer and format.
   - The aggregation service selects closed KV-IR files for consolidation. A worker uses CLP to combine each selected group into one immutable archive.
-  - Consolidation runs asynchronously; queries continue using KV-IR while the archive is built.
-  - Explain streaming consolidation precisely: as the worker reads encoded KV-IR, CLP merges each input schema tree into the archive-local Merged Schema Tree (MST), which maps every observed path and value type.
-  - Each event's schema identifies the Encoded Record Table (ERT) for its exact combination of paths and types; CLP appends encoded values directly to that ERT's columns without reparsing the original event.
-  - Give readers a mental model: the archive contains compact internal tables, one per record shape.
-  - Explain that ERTs are archive-owned internal tables, not SQL tables. Each shape has its own ERT, so absent fields do not create null entries; typed variables occupy separate ERT columns.
+  - Consolidation runs asynchronously. Queries continue using KV-IR while the archive is built.
+  - Lead with consolidation efficiency: CLP processes encoded KV-IR directly instead of reconstructing and reparsing original events.
+  - Introduce the plain-language mental model before the acronyms: CLP merges path-and-type metadata into an archive-wide map called the Merged Schema Tree (MST), then appends each record to the columnar group for its shape, called an Encoded Record Table (ERT).
+  - Explain the physical benefit in familiar terms: separate record-shape groups avoid filling one wide table with nulls, and typed variables occupy separate columns.
   - Define logtypes as recurring static text patterns stored separately from typed variables.
   - Explain the mechanism rather than size alone: when an archive combines similar files, CLP can deduplicate more recurring structure, logtypes, and values across them.
   - Grouping files queried together can reduce archive opens. Balance this and compression against object size, request cost, query latency, and parallelism.
-- **Figure:** Keep the data flow simple: application container → host log collector → fresh KV-IR → asynchronous consolidation → dense archive. Show only metadata from the collector and consolidator to Uber's metastore. Keep the caption to freshness, consolidation, and metastore tracking.
-- **Takeaway:** KV-IR provides freshness. Archives add denser columnar organization without beginning compression from scratch.
+- **Figure:** Use the fixed-layout SVG in `figures/clp-storage-flow.svg`. Place application containers above the host log collector and the latest KV-IR snapshot directly to the collector's right. On the next row, place Uber's metastore, asynchronous consolidation, and the consolidated columnar archive horizontally. Label each arrow. Distinguish the metastore's selection of closed KV-IR files from the consolidation worker's physical read of those files. Consolidation produces both the archive and its metadata.
+- **Takeaway:** Data stays compressed and queryable as it arrives and after consolidation.
 
-## 4. Native Semi-Structured Querying with Presto
+## 3. Native Semi-Structured Querying with Presto
 
 - **Goal:** Make Presto a co-equal part of the architecture and follow one query into a native CLP scan.
 - **Why:** Uber's tools and programmatic clients already depend on Presto access control, planning, routing, aggregation, and SQL tooling.
@@ -94,13 +82,13 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - Use that normalization to bridge log-oriented workflows into the broader Presto ecosystem.
   - The connector analyzes SQL to map top-level-key predicates to Uber's metastore, recognize early-termination shapes, and carry typed-field, wildcard, and log-template predicates to CLP.
   - Uber's metastore narrows candidate KV-IR and archive files. Presto schedules splits, CLP executes supported scans, and Presto performs the remaining computation.
-  - Treat this as a preview; Section 5 explains the planning and execution layers.
+  - Treat this as a preview; Section 4 explains the planning and execution layers.
   - Each selected physical file becomes one split assigned to a Presto worker. A KV-IR split contains one logical log file, while an archive split may contain many.
   - Explain the overlap window: after consolidation, a logical file can remain in KV-IR until purged, even when already present in one or more archives.
   - State the full logical-file precedence rule: an archive takes priority over KV-IR, and the latest archive wins when several contain the same file. Select one copy so a query can cover fresh and archived data without duplicate events.
   - Define native semi-structured querying as carrying typed paths, predicates, and projections into split-local encoded execution instead of reconstructing every event for generic JSON extraction.
   - Explain the SQL interface compactly: common path-and-type pairs appear as table columns; typed functions access other paths; wildcard functions search without an exact key.
-  - Refer to MST, ERT, and logtype definitions from Section 3 rather than defining them again.
+  - Refer to the Section 2 storage concepts through “path-and-type map,” “column groups,” and “recurring text patterns” rather than requiring readers to remember MST and ERT.
   - Use one SQL example with typed paths, wildcard value search, filters, and Top-N.
   - State that native Variant operators can replace exact-path accessor syntax once Presto supports them end to end; wildcard-key search and CLP-native execution remain storage-specific.
   - Refer detailed Variant-layer, physical-scan, and connector-boundary discussion to the earlier PrestoDB blog.
@@ -110,24 +98,24 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - Native workers invoke CLP against compressed object-storage streams without staging complete archives.
 - **Takeaway:** Presto supplies the common relational system while the connector preserves CLP-native execution.
 
-## 5. Exploiting Data Knowledge at Every Layer
+## 4. Exploiting Data Knowledge at Every Layer
 
 - **Goal:** Explain the five-worker result through concrete work elimination.
 - **Why:** Compression alone does not prevent broad object reads, decompression, or materialization.
 - **Important points:**
   1. Uber's metastore compares query filters with file metadata and removes files that cannot match before split creation.
   2. At Uber, Top-N file selection uses event-time bounds and exact matching-event counts for supported metadata filters to exclude older files before split creation, but only when no event in them can enter the latest `N` results.
-  3. Split-local MST metadata resolves and prunes paths; logtype and variable dictionaries eliminate nonmatches before the reader advances to relevant ERTs and columns.
+  3. The archive-local path-and-type map resolves paths to relevant column groups. Logtype and variable dictionaries eliminate nonmatches before the scan advances to them.
   4. CLP applies supported filters and projections before reconstructing results.
 - Explain the broad-query guardrail: during planning, Uber detects queries expected to cover many files and events and suggests narrower time or metadata filters. This lightweight prompt often leads users to add constraints they already know, substantially reducing the scan. Users can still proceed when they need the complete result.
 - State why metadata-provider agnosticism matters: each deployment can plug in an implementation suited to its catalog and storage system.
 - Keep pruning distinct from early termination. Include exact matching counts, the timestamp watermark, overlap handling, and safe fallback.
 - Define the watermark as the earliest event timestamp covered by the files considered when their matching-event counts reach `N`. Include every file whose event-time range overlaps the watermark, and stop only when the next file's maximum timestamp is earlier.
 - Label Top-N planning as Uber production behavior, not a current open-source capability.
-- **Figure:** Use a compact left-to-right pipeline. Keep pruning and the Top-N cutoff check as separate steps inside metastore planning. Show bounds, counts, and overlap in the Top-N step, and state the fallback compactly in the caption. Inside CLP execution, show MST path resolution and dictionary pruning before forward advancement to relevant ERTs.
+- **Figure:** Use a compact left-to-right pipeline. Keep pruning and the Top-N cutoff check as separate steps inside metastore planning. Show bounds, counts, and overlap in the Top-N step, and state the fallback compactly in the caption. Inside CLP execution, show path resolution from the schema map and dictionary pruning before advancing to relevant column groups.
 - **Takeaway:** Each layer avoids work it can determine is unnecessary.
 
-## 6. Production Results
+## 5. Production Results
 
 - **Goal:** Validate the design as a serving system, not only a compression result.
 - **Important points:**
@@ -140,7 +128,7 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - Define operational scope before making a maintenance-effort claim.
 - **Takeaway:** Application flexibility, freshness, density, SQL, and a five-worker Presto cluster work as one system.
 
-## 7. What Comes Next
+## 6. What Comes Next
 
 - **Goal:** Transition from production results to two development directions: smarter storage organization, followed by agent-assisted data exploration beyond today's guess-and-check process.
 - **Why:** Separating the two ideas avoids treating agent interaction as part of storage planning and gives the longer agent direction appropriate emphasis.
@@ -165,7 +153,7 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
 - **Takeaway:** Metadata can guide storage organization and, separately, help agents discover and retrieve relevant evidence without guessing exact paths or terms.
 - **Weighting:** Use tiering → consolidation → querying. Keep the first two to one substantive paragraph each, then end with the longer agent direction and the section's only SQL example.
 
-## 8. Open Source, Collaboration, and Conclusion
+## 7. Open Source, Collaboration, and Conclusion
 
 - List current open-source capabilities, Uber production extensions, and further-development areas once.
 - Credit YScope for connector leadership.
@@ -198,6 +186,6 @@ Treat the remaining word budget as headroom, not a target. Use it only for requi
 - Distinguish current open source, Uber production, and further-development areas at first mention.
 - Do not describe metadata-guided archive grouping, automated tiering, selective reload, or the proposed agent operations as complete production or open-source workflows.
 - Match the earlier series' engineer-to-engineer voice: identify the actor, action, and result; use “we” for Uber design choices; and prefer concrete verbs over abstract umbrella phrases.
-- Keep genuine technical terms such as KV-IR, MST, ERT, split, and Top-N, but define each through the work it performs.
+- Keep genuine technical terms such as KV-IR, split, and Top-N, and define each through the work it performs. Introduce MST and ERT once for technical readers, then prefer their plain-language descriptions.
 - Replace `PRESTO_BLOG_URL` before publication.
 - Finish with a complete narrative review and `git diff --check`.
