@@ -1,4 +1,4 @@
-# Native SQL over Petabyte-Scale Semi-Structured Logs: CLP and Presto at Uber (Part III)
+# Making Petabyte-Scale Semi-Structured Logs SQL-Native: Inside Uber’s CLP and Presto Infrastructure (Part III)
 
 - **Type:** Production architecture case study
 - **Length:** 3,000-word hard cap, including final evidence
@@ -9,12 +9,12 @@
 
 CLP's compression is necessary but does not explain how five Presto Native workers serve the current workload. Presto, Uber's metastore, the connector, and CLP each avoid different work as the story follows data from production to query:
 
-> Applications and platform workloads → fresh CLP key-value intermediate representation (KV-IR) → denser CLP archives → one Presto query path → progressively narrower execution
+> Applications and platform workloads → searchable CLP key-value intermediate representation (KV-IR) → consolidated columnar CLP archives → one Presto query path → progressively narrower execution
 
 Readers should understand:
 
 - Why application-defined log structure requires semi-structured storage.
-- How CLP preserves both freshness and long-term density.
+- How CLP keeps newly arriving and consolidated data compressed and queryable.
 - What Presto contributes beyond being a SQL endpoint.
 - How Uber's metastore, the connector, and CLP's native storage and search engine eliminate different work.
 - How SQL semantics lay the groundwork for an artificial-intelligence-friendly interface and more intelligent data placement.
@@ -99,16 +99,20 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
 - **Goal:** Explain the five-worker result through concrete work elimination.
 - **Why:** Compression alone does not prevent broad object reads, decompression, or materialization.
 - **Important points:**
-  1. Uber's metastore compares query filters with file metadata and removes files that cannot match before split creation.
-  2. At Uber, Top-N file selection uses event-time bounds and exact matching-event counts for supported metadata filters to exclude older files before split creation, but only when no event in them can enter the latest `N` results.
-  3. The archive-local path-and-type map resolves paths to relevant column groups. Logtype and variable dictionaries eliminate nonmatches before the scan advances to them.
-  4. CLP applies supported filters and projections before reconstructing results.
+  - Present three skimmable layers with numbered bold lead-ins, without using a Markdown list that would be interrupted by the callout:
+    1. Prune files that cannot match before scheduling.
+    2. For eligible latest-N queries, avoid scheduling older files whose matches cannot change the result.
+    3. Inside each selected archive, use the path-and-type map plus logtype and value dictionaries to narrow the encoded scan.
 - Explain the broad-query guardrail: during planning, Uber detects queries expected to cover many files and events and suggests narrower time or metadata filters. This lightweight prompt often leads users to add constraints they already know, substantially reducing the scan. Users can still proceed when they need the complete result.
 - State why metadata-provider agnosticism matters: each deployment can plug in an implementation suited to its catalog and storage system.
-- Keep pruning distinct from early termination. Include exact matching counts, the timestamp watermark, overlap handling, and safe fallback.
-- Define the watermark as the earliest event timestamp covered by the files considered when their matching-event counts reach `N`. Include every file whose event-time range overlaps the watermark, and stop only when the next file's maximum timestamp is earlier.
-- Label Top-N planning as Uber production behavior, not a current open-source capability.
-- **Figure:** Use a compact left-to-right pipeline. Keep pruning and the Top-N cutoff check as separate steps inside metastore planning. Show bounds, counts, and overlap in the Top-N step, and state the fallback compactly in the caption. Inside CLP execution, show path resolution from the schema map and dictionary pruning before advancing to relevant column groups.
+- Keep the main latest-N explanation to its key distinction from pruning: a skipped older file may contain matches, but none can enter the requested result.
+- Motivate the optional callout by noting that correctness becomes subtle when file time ranges overlap. Tell interested readers that the callout explains the watermark and safe fallback.
+- Put correctness details in an optional Markdown blockquote immediately after the latest-N point. Use a descriptive title suitable for conversion to the publisher's native callout component.
+- In that optional expert callout, keep only the correctness invariant. Stream pruned candidates by descending `max_timestamp`, accumulate exact matches, lock the watermark to the minimum selected `min_timestamp` when the count first reaches `N`, include overlapping candidates at or above the watermark, and stop at the first candidate below it.
+- State guaranteed-mode fallback compactly: whenever any remaining predicate lacks an exact per-file count, return every file left after pruning.
+- Describe approximate mode as an explicit latency-versus-completeness choice. Estimated matching counts may choose the cutoff. Presto still sorts selected events, but skipped files may contain events that belong in the true latest `N`; do not imply a correctness guarantee.
+- State that the algorithm runs before split creation and preserve the production-versus-open-source boundary. Omit metadata-maintenance and range-quality commentary from the draft callout.
+- **Visualization:** Do not add a separate planning/execution figure. The three bold lead-ins provide the skimmable structure, and the optional latest-N callout carries the correctness details.
 - **Takeaway:** Each layer avoids work it can determine is unnecessary.
 
 ## 5. Production Results
@@ -116,13 +120,16 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
 - **Goal:** Validate the design as a serving system, not only a compression result.
 - **Important points:**
   - Approximately 25 PB/month raw and 750–850 terabytes (TB) per month compressed.
-  - Explain why the first article's 169× result is not directly comparable: it measured Spark messages alone, while today's 29–33× figure spans a broader set of workloads whose records are enriched with operational fields. High-cardinality, high-entropy trace IDs (UUIDs) are effectively unique and offer little repetition for compression.
-  - Across Uber, five 48-core workers serve the CLP SQL workload and typically use only 5–10% of their central processing unit (CPU) capacity.
+  - Put the 169× comparison in a footnote rather than the main narrative. Explain that the first article measured Spark messages alone, while today's 29–33× figure spans broader workloads enriched with operational fields. Trace IDs (UUIDs) are effectively unique and offer little repetition for compression. Convert the Markdown footnote to the publisher's native footnote component if necessary.
+  - A five-node cluster of 48-core Presto Native workers serves the CLP SQL workload.
+  - Current production scale: hundreds of users per week and thousands of queries per day, with approximately two-second average response time and 26-second 99th-percentile (p99) response time.
+  - Workers typically use only 5–10% of their central processing unit (CPU) capacity.
   - Uber also rate-limits object-storage reads to reduce parallelism and preserve bandwidth for other workloads. Queries still meet the required latency, leaving room to serve more queries or onboard more workloads.
   - Direct object-storage reads without local staging or cache.
-  - Add users, query volume, average latency, 99th-percentile (p99) latency, and pruning measurements only after definitions are approved.
+  - Add a two-series or two-panel Figure 2 showing weekly active users and daily query volume from May through the approved publication cutoff.
+  - Confirm that the user, query-volume, and response-time figures describe the same production query population and measurement window. Add a representative pruning measurement after its definition is approved.
   - Define operational scope before making a maintenance-effort claim.
-- **Takeaway:** Application flexibility, freshness, density, SQL, and a five-worker Presto cluster work as one system.
+- **Takeaway:** Application flexibility, freshness, compression, SQL, and a five-worker Presto cluster work as one system.
 
 ## 6. What Comes Next
 
@@ -131,23 +138,29 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
 - **Important points:**
   - **Smarter data placement and consolidation:** Group the first two short directions under this subheading.
   - **Intelligent tiering:** Make CLP the default queryable storage tier and use a hot index as optional acceleration. Use how often each table is queried, which fields and time ranges those queries access, and retention requirements to decide whether it needs a hot index and how long data should remain there. If query demand rises, quickly restore selected tables or time ranges from CLP to the hot index.
-  - **Grouping similar data during consolidation:** Use CLP's stored structure and patterns, each file's source, and query history to decide which closed KV-IR files belong in the same archive. Similar inputs improve cross-file deduplication; frequently co-accessed data reduces archives opened. Retain time, retention, freshness, and archive-size limits.
+  - **Grouping similar data during consolidation:** Use CLP's schema and logtype metadata, each file's source, and query history to decide which closed KV-IR files belong in the same archive. Similar inputs improve cross-file deduplication. Frequently co-accessed data reduces archives opened. Retain time, retention, freshness, and archive-size limits.
   - **Beyond guesswork: putting CLP metadata to work for agents:** Give this direction its own subheading and greater narrative weight. Frame SQL access as solving execution but not discovery, then map natural-language or semantic input to typed SQL, metadata predicates, and storage operations.
   - Let the enthusiasm come from a concrete arc: production MCP usage exposes two gaps, keyword guessing establishes today's limitation, and CLP's existing metadata makes better workflows achievable. Use the Claude Code query to make it tangible.
   - Separate the two gaps: agents need structure and patterns to write precise queries, or semantic search and summaries to explore directly without retrieving every raw event.
   - Describe today's behavior concretely: agents guess keywords and hope one surfaces relevant events. Narrow terms miss data; broad terms return too many events.
   - **Search-and-discovery workflow:** Scope with known filters, then place the paths, types, distinct logtypes, and their counts from the remaining data into the agent's context. The agent should know the filtered data's structure, message patterns, and frequencies before writing the next query. Retrieve individual events only as evidence.
   - **Intent search:** When an agent knows the concept but not its exact wording or path, `SEMANTIC(...)` filters by meaning.
-  - **Query discovery:** Return all recurring patterns under exact filters, or one evidence-backed summary, so an agent can decide what to query next.
-  - **Richer output:** Filtered summaries, recurring patterns, structural changes, representative events, and links to exact evidence.
-  - Present the Claude Code query as one the agent generates after receiving that structural context. Use a `claude_code_session_transcripts` table and real transcript structure. Prune top-level `type`, then apply `SEMANTIC(...)` and grouped `PATTERN(...)` to tool-result text under `message.content[*].content`. Keep the search phrase fictional.
-  - Explain that `message.content` is polymorphic—string or typed-block array—and tool-result blocks carry `content`, `is_error`, and `tool_use_id`.
+  - Make the reduction problem explicit for non-specialists: logs may repeat the same message thousands of times while changing only timestamps, IDs, paths, or other variables. Returning every event consumes bandwidth and agent context while hiding the distinct failure forms.
+  - **Query discovery:** `PATTERN(...)` answers “Which distinct message forms did the search find, and how often?” by grouping messages that differ only in variable values.
+  - **Richer output:** If the pattern list remains long, `SUMMARY(...)` explains that smaller set while preserving counts, representative events, and links to exact evidence. The agent uses this result to choose its next query.
+  - Present the Claude Code query as one the agent generates after receiving that structural context. Use a `claude_code_session_transcripts` table and real transcript structure. Prune top-level `type`, apply `SEMANTIC(...)` to tool-result text under `message.content[*].content`, and group by both `PATTERN(...)` on that content and `gitBranch`. Keep the search phrase fictional. Add short inline comments for the surprising transcript mapping and future operators.
+  - Introduce the query with its diagnostic question: which connector-load failures recur, and are they concentrated on particular branches? Explain before the SQL that keyword search may miss differently worded failures, raw-event retrieval hides the common cases, `SEMANTIC(...)` finds the concept, `PATTERN(...)` collapses matches into logtypes, and `gitBranch` supplies the correlation dimension.
+  - State the practical gain: semantic search identifies relevant tool output without exact keywords, `PATTERN(...)` maps the matches to CLP's deduplicated logtypes, and `gitBranch` shows where each recurring failure form occurred. The result is a ranked table rather than every matching raw event.
+  - Follow the SQL with a compact, clearly illustrative result table. Show several variable-bearing messages collapsing into one logtype, preserve the branch dimension and frequency, and explain how the agent uses the reduced result before fetching individual events.
+  - Package the question, operator roles, SQL, output table, and interpretation as one titled callout: “Which failures recur, and on which branches?” It must be optional in the article flow and self-contained enough to share as a screenshot. Repeating the brief operator definitions inside this callout is intentional.
+  - Explain only the transcript structure needed by the query: `message.content` may be text or typed blocks, including tool results stored in `user` records.
   - Mention, without repeating the full query, that `SUMMARY(PATTERN(...))` could return one synopsis of recurring matching failures, with representative evidence and source links.
-  - Explain the native cost model once: CLP can operate over filtered paths, unique logtypes, dictionary values, and stored counts, then fetch individual events only when an agent needs examples or source evidence.
+  - Explain the native cost model once: CLP can operate over filtered paths, deduplicated logtypes, dictionary values, and stored counts, then fetch individual events only when an agent needs examples or source evidence.
   - State that these ideas still need refinement and evaluation.
   - Do not apply one blanket maturity label. State that these directions build on deployed capabilities while their more advanced forms remain under development and evaluation.
 - **Takeaway:** Metadata can guide storage organization and, separately, help agents discover and retrieve relevant evidence without guessing exact paths or terms.
 - **Weighting:** Use tiering → consolidation → querying. Keep the first two to one substantive paragraph each, then end with the longer agent direction and the section's only SQL example.
+- **Length safeguard:** Avoid explaining keyword limitations or the three future operators more than once. Let the query and illustrative result table carry the detailed agent example.
 
 ## 7. Open Source, Collaboration, and Conclusion
 
