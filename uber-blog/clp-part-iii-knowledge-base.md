@@ -476,7 +476,7 @@ Use only release-verified wildcard patterns. Public tests cover equality, numeri
 
 - Presto Native worker: compute process
 - In-process connector: Presto-to-CLP integration and split dispatch
-- CLP reader: storage-specific interpretation, search, and projection
+- Native CLP scan path: storage-specific interpretation, search, and projection
 
 Avoid phrasing that makes Presto itself the storage layer or makes the connector a separate remote service.
 

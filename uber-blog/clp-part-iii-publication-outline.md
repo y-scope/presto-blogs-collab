@@ -16,7 +16,7 @@ Readers should understand:
 - Why producer-controlled schemas require semi-structured storage.
 - How CLP preserves both freshness and long-term density.
 - What Presto contributes beyond being a SQL endpoint.
-- How Uber's metastore, the connector, and the CLP reader eliminate different work.
+- How Uber's metastore, the connector, and CLP's native storage and search engine eliminate different work.
 - How SQL semantics lay the groundwork for an artificial-intelligence-friendly interface and more intelligent data placement.
 
 ## Prior Foundations
@@ -178,7 +178,7 @@ Treat the remaining word budget as headroom, not a target. Use it only for requi
 - Scope 25 PB/month to currently onboarded workloads, never one query.
 - Keep raw volume, compressed footprint, and bytes read distinct.
 - Keep schemas archive- or split-local, not dataset-global.
-- Attribute Uber services, Presto, the connector, and CLP readers precisely.
+- Attribute Uber services, Presto, the connector, and CLP's native storage and search engine precisely.
 - Keep Uber's metastore implementation a black box.
 - Do not repeat the optimizer walkthrough, benchmarks, Variant comparison, or connector-author guide.
 - Distinguish current open source, Uber production, and future work at first mention.

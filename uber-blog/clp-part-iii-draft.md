@@ -6,7 +6,7 @@ At Uber, workloads in machine learning, artificial intelligence, streaming, and 
 
 This article continues Uber's CLP series. The first article, [“Reducing Logging Cost by Two Orders of Magnitude Using CLP”](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/), demonstrated compression and write-path savings for Spark logs. The second, [“Modernizing Logging at Uber with CLP (Part II)”](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/), covered production ingestion, retention, and viewing. This third article follows that data into native semi-structured querying with Presto.
 
-Compression is only part of the answer. Growing logs remain searchable before consolidation builds denser archives. Presto gives both forms one governed query path. Uber's metadata catalog, the CLP connector, and CLP readers then avoid work at different layers. The story begins with independently deployed producers.
+Compression is only part of the answer. Growing logs remain searchable before consolidation builds denser archives. Presto gives both forms one governed query path. Uber's metadata catalog, the CLP connector, and CLP's native storage and search engine then avoid work at different layers. The story begins with independently deployed producers.
 
 ## When Producers Control the Log Schema
 
@@ -14,7 +14,7 @@ Thousands of log producers deploy independently, so their schemas evolve continu
 
 The [second article in the series](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/) explains how Uber preserved existing log messages while adding structured operational context during ingestion. A record can therefore contain natural language alongside typed fields and nested objects, even as its fields, nesting, and value types evolve independently. The [μSlope paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui), published at OSDI '24, explains how CLP stores such evolving records. The work was a collaboration among [YScope](https://yscope.com/), the University of Toronto, and Uber's Observability, Pinot, and Storage and Search teams.
 
-A global table schema would turn routine application changes into coordinated migrations. An opaque document avoids that coordination but forces search to rediscover structure. Uber instead needed to preserve producer-controlled data immediately and organize it efficiently later.
+A global table schema would turn routine application changes into coordinated migrations. An opaque document avoids that coordination but forces search to rediscover structure.
 
 ## Fresh Logs: Searchable Before Archiving
 
@@ -77,7 +77,7 @@ From there, a production query passes through four stages:
 
 1. **Analyze.** Uber's query layer and the connector identify metastore filters, supported queries that request only the newest results, and operations CLP can execute.
 2. **Select.** The metastore returns KV-IR and archive files while enforcing archive precedence. Presto schedules them as splits.
-3. **Scan.** The connector running inside the worker dispatches the appropriate CLP reader, which applies supported filters and projections to the compressed object-storage stream without staging the complete file.
+3. **Scan.** The connector running inside the worker selects the appropriate native CLP scan path. CLP applies supported filters and projections to the compressed object-storage stream without staging the complete file.
 4. **Finish.** CLP reconstructs requested results. Presto evaluates remaining expressions and performs joins, aggregation, ordering, and delivery.
 
 Here, **native semi-structured querying** means more than C++ execution: Presto retains governance and distributed relational planning, while CLP searches its encoded representation instead of expanding every event into JSON. The next section shows where that division avoids work.
