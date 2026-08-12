@@ -21,7 +21,8 @@ Readers should understand:
 
 ## Prior Foundations
 
-- [Uber CLP Part II](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/): appender adoption, operational enrichment, and timed publication of active streams.
+- First article in Uber's CLP series, [“Reducing Logging Cost by Two Orders of Magnitude Using CLP”](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/): compression and write-path savings for Spark logs.
+- Second article, [“Modernizing Logging at Uber with CLP (Part II)”](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/): appender adoption, operational enrichment, and timed publication of active streams.
 - [YScope's August 2025 post](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82): original motivation and query mechanics.
 - Earlier PrestoDB blog post, **[PRESTO_BLOG_URL](PRESTO_BLOG_URL)**: current pluggable connector, CLP versus Variant, and connector-author lessons.
 - This article: Uber's production lifecycle, Presto query path, production evidence, and future direction.
@@ -40,7 +41,7 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
 - **Why:** Independently deployed producers cannot coordinate one complete table schema.
 - **Important points:**
   - Use message and nested-JSON examples before defining semi-structured and polymorphic data.
-  - Refer to Part II for appender and enrichment mechanics.
+  - Refer to the second article in the series for appender and enrichment mechanics.
   - Repeat only the resulting storage problem: original messages, typed fields, nested objects, and evolving enrichment coexist.
   - Treat natural-language messages, structured envelopes, and evolving JSON as one semi-structured continuum rather than rigid categories.
   - Keep the schema foundation brief. Contrast structural preservation with whole-document parsing, then move to the production lifecycle.
@@ -55,13 +56,13 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - Expand key-value intermediate representation (KV-IR) at first use.
   - YScope's CLP project supplies KV-IR and its encoder, reader, and search capabilities.
   - Uber supplies collection, enrichment, publication, metadata integration, and object storage.
-  - KV-IR extends Part I's message-oriented intermediate representation to key-value events.
+  - KV-IR extends the first article's message-oriented intermediate representation to key-value events.
   - KV-IR makes CLP's semi-structured storage model, described in the μSlope paper, streamable: schema-tree updates and per-event references into the evolving tree accompany encoded values.
   - Schema-tree updates precede the events that reference them, keeping the tree fully materialized for every readable stream prefix.
-  - Unlike the Part II design, CLP compression now runs in the host-local collector rather than the log appender.
+  - Unlike the design described in the second article, CLP compression now runs in the host-local collector rather than the log appender.
   - If a producer container exits, the collector can still compress and publish logs already emitted by that container.
   - Host collectors append compressed KV-IR locally without closing the active stream.
-  - Summarize rather than re-explain Part II's publication design: configurable timers publish the current KV-IR contents and metadata while the local stream remains open.
+  - Summarize rather than re-explain the second article's publication design: configurable timers publish the current KV-IR contents and metadata while the local stream remains open.
   - Fresh data becomes discoverable in roughly 30 seconds to a few minutes.
 - **Takeaway:** Fresh logs are already compressed, structured, and searchable before archive construction.
 
@@ -124,7 +125,7 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
 - **Goal:** Validate the design as a serving system, not only a compression result.
 - **Important points:**
   - Approximately 25 PB/month raw and 750–850 terabytes (TB) per month compressed.
-  - Explain why Part I's 169× Spark result is not directly comparable: the current representation carries the same Spark logs with operational enrichment, including high-cardinality universally unique identifier (UUID) trace IDs that contain little compressible repetition.
+  - Explain why the first article's 169× Spark result is not directly comparable: the current representation carries the same Spark logs with operational enrichment, including high-cardinality universally unique identifier (UUID) trace IDs that contain little compressible repetition.
   - Five 48-core workers typically operating at 5–10% central processing unit (CPU) utilization.
   - Direct object-storage reads without local staging or cache.
   - Add users, query volume, average latency, 99th-percentile (p99) latency, and pruning measurements only after definitions are approved.
