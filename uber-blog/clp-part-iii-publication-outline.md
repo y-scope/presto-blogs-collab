@@ -3,7 +3,7 @@
 - **Type:** Production architecture case study
 - **Length:** 3,000-word hard cap, including final evidence
 - **Audience:** Presto, observability, storage, data-platform, streaming, machine-learning, and artificial-intelligence engineers
-- **Central question:** How can five Presto Native workers provide SQL access to data from workloads producing roughly 25 petabytes (PB) of raw logs per month?
+- **Central question:** How does Uber keep evolving logs compressed and queryable as they arrive, expose them through SQL, and serve data from workloads producing roughly 25 petabytes (PB) per month with five Presto Native workers?
 
 ## Story
 
@@ -11,13 +11,19 @@ CLP's compression is necessary but does not explain how five Presto Native worke
 
 > Applications and platform workloads → searchable CLP key-value intermediate representation (KV-IR) → consolidated columnar CLP archives → one Presto query path → progressively narrower execution
 
-Readers should understand:
+### Three Reader Takeaways
 
-- Why application-defined log structure requires semi-structured storage.
-- How CLP keeps newly arriving and consolidated data compressed and queryable.
-- What Presto contributes beyond being a SQL endpoint.
-- How Uber's metastore, the connector, and CLP's native storage and search engine eliminate different work.
-- How SQL semantics lay the groundwork for an artificial-intelligence-friendly interface and more intelligent data placement.
+1. **Native SQL for evolving semi-structured logs.** The Presto CLP connector exposes polymorphic paths through typed SQL while preserving CLP's native storage and execution. It is neither a conversion into one fixed physical table nor a syntax-only SQL adapter that materializes every event first.
+2. **Compressed and queryable throughout ingestion.** Appendable KV-IR snapshots make arriving data searchable after their metadata reaches the metastore, typically within 30 seconds to a few minutes. Asynchronous consolidation later creates columnar CLP archives. Queries span both forms without duplicate events, and the onboarded workloads achieve 29–33× aggregate storage reduction.
+3. **A small query cluster through layered work reduction.** Metastore pruning, latest-N file skipping, and CLP's archive-local metadata prevent most irrelevant files, encoded streams, and events from being examined. This—not a claim that each query scans petabytes—explains how five Presto Native workers serve hundreds of weekly users and thousands of daily queries with approximately two-second average and 26-second p99 response times.
+
+### Forward-Looking Payoff
+
+The work does more than add SQL syntax to CLP. Typed access, stored schema metadata, deduplicated log format patterns, and production MCP usage create a foundation for agent-oriented discovery: inspect observed structure with `SCHEMA(<path>)`, expose patterns with `PATTERN(<path>)`, and search by meaning with `SEMANTIC(<path>, <natural-language query>)`. These interfaces remain under development and evaluation.
+
+The application-defined-schema problem is the foundation for all three takeaways, not a separate fourth takeaway: the logging platform cannot coordinate one fixed schema across independently deployed applications and versions.
+
+The article reaches them in production-system order: schema foundation → compressed ingestion and consolidation → native SQL integration → layered search reduction and measured impact → future storage and agent workflows.
 
 ## Prior Foundations
 
@@ -93,7 +99,8 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
   - Label each access pattern with a short same-line SQL comment. Do not repeat those explanations below the query or introduce optimizer terminology there.
   - Keep Variant to one contextual sentence. Refer detailed Variant and shredding discussion to the earlier PrestoDB blog.
   - Define “native” in two senses: the SQL interface feels familiar, and the connector invokes CLP within each Presto Native worker process. These are not wrappers around `JSON_EXTRACT_SCALAR()` and do not first pass every event through a serializer/deserializer (SerDe) to create a generic row. Supported field requests and filters enter CLP's encoded scan, and CLP reconstructs only requested results. Refer rewriting mechanics to YScope's earlier blog.
-  - End by summarizing both halves of native semi-structured querying: a familiar SQL interface and direct CLP execution. Transition to the need to reduce the files and encoded values each query touches at Uber's scale.
+  - End with one compact query-path callout: SQL query → metastore narrows candidate files → Presto schedules splits → CLP scans compressed KV-IR and archives inside native workers → Presto finishes the result.
+  - Use this callout instead of a second connector-architecture figure. It provides the skimmable map; the native-execution paragraph and the next section explain its boundaries and work reduction.
   - Define `split` in Section 4, where file pruning first requires the term. Introduce Top-N file skipping there as well.
 - **Takeaway:** Presto supplies the common relational system while the connector preserves CLP-native execution.
 
@@ -116,7 +123,7 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
 - Describe approximate mode as an explicit latency-versus-completeness choice. Estimated matching counts may choose the cutoff. Presto still sorts selected events, but skipped files may contain events that belong in the true latest `N`; do not imply a correctness guarantee.
 - State that the algorithm runs before split creation and preserve the production-versus-open-source boundary. Omit metadata-maintenance and range-quality commentary from the draft callout.
 - After the third layer, state the combined result: on average across the measured production query population, time-range filtering alone would require examining approximately 218,660 times as many log events. Attribute the reduction to all three layers, not pruning or latest-N planning alone.
-- **Visualization:** Do not add a separate planning/execution figure. The three bold lead-ins provide the skimmable structure, and the optional latest-N callout carries the correctness details.
+- **Visualization:** Do not add a separate planning/execution figure. The inline query-path callout provides the overview, the three bold lead-ins explain work reduction, and the optional latest-N callout carries correctness details.
 - **Takeaway:** Each layer avoids work it can determine is unnecessary.
 
 ## 5. Production Results

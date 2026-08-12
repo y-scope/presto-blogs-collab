@@ -60,11 +60,11 @@ Here, **native** applies at two levels. At the SQL level, users combine ordinary
 
 [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) explains the underlying query rewriting. The preceding **[PrestoDB blog](PRESTO_BLOG_URL)** compares CLP with [Variant](https://parquet.apache.org/docs/file-format/types/variantencoding/) and explains how future Variant operators could simplify exact-path access.
 
-Together, the SQL interface and direct CLP execution provide native semi-structured querying. At Uber's scale, the next challenge is to reduce how many files and encoded values each query touches.
+> **Query path:** SQL query → metastore narrows candidate files → Presto schedules splits → CLP scans compressed KV-IR and archives inside native workers → Presto finishes the result
 
 ## Exploiting Data Knowledge at Every Layer
 
-The query path reduces work at three points.
+Three layers prevent unnecessary data from moving through this path.
 
 **1. Prune files before scheduling.** Uber's metastore compares query filters with per-file metadata such as event-time bounds, application, host, job, and correlation ID. A file that cannot match never becomes a **split**—a file-processing task assigned to one worker—and is never opened. The open-source connector is agnostic to the metadata provider, so each deployment can integrate a provider suited to its catalog and storage system.
 
