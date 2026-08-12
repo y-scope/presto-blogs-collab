@@ -30,7 +30,7 @@ Similar to the mechanism in the [second blog in this series](https://www.uber.co
 
 For longer retention, our aggregation service groups closed KV-IR files into a consolidation job. An aggregation worker invokes CLP to combine them into one immutable archive. This work runs asynchronously, so it does not delay access to fresh logs.
 
-Consolidation neither reparses events nor rediscovers structure. CLP merges the input schema trees into the archive's **Merged Schema Tree (MST)**, which records every observed path and value type. It routes each record into an **Encoded Record Table (ERT)** for its exact key-and-type shape. Each archive contains many of these internal tables. Within an ERT, each column holds one path and value type. Other record shapes go to other ERTs instead of adding nulls to this one. CLP further separates recurring static text patterns, called **logtypes**, from their typed variables.
+Consolidation neither reparses events nor rediscovers structure. CLP merges the input schema trees into the archive's **Merged Schema Tree (MST)**, a map of every observed path and value type. Think of an archive as a collection of compact internal tables organized by record shape. CLP calls each one an **Encoded Record Table (ERT)** and routes a record to the ERT matching its exact combination of keys and value types. Within an ERT, each column holds one path and value type. Fields belonging only to other shapes do not create nulls in that table. CLP also separates recurring static text patterns, called **logtypes**, from typed variables stored in separate ERT columns.
 
 Within a group of similar log files, CLP can deduplicate more schemas, logtypes, and repeated values across files. Grouping related data can also keep information likely to be queried together in fewer archives. We balance those benefits against object size, request cost, query latency, and parallelism.
 
@@ -197,4 +197,4 @@ Presto queries fresh KV-IR and archived data through one SQL path. Before worker
 
 The broader lesson is that a common SQL engine does not require one physical storage model. Presto handles SQL and distributed execution. CLP preserves application-defined semi-structured data and searches it in compressed form. Together, they provide an Uber-wide query service for fresh and archived data, with substantial headroom for demand and scope to grow.
 
-Finally, we want to use metastore and CLP archive metadata to optimize storage and help agents explore petabyte-scale datasets by discovering structure, enumerating recurring patterns, searching by meaning, summarizing matched patterns, and formulating precise queries.
+Finally, we want to use metastore and CLP archive metadata both to optimize storage and to give agents the structure, recurring patterns, semantic search, and summaries they need to formulate precise queries over petabyte-scale data.

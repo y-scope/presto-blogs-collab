@@ -74,9 +74,10 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - Uber orchestrates centralized aggregation. CLP supplies the archive writer and format.
   - The aggregation service selects a group of closed KV-IR files and creates a consolidation job.
   - An aggregation worker picks up the job and invokes CLP to produce one immutable archive.
-  - Merge each KV-IR file's schema tree into the archive-local Merged Schema Tree (MST), which records every observed path and value type.
-  - Route each encoded record to an Encoded Record Table (ERT) matching its key-and-type shape; do not reparse raw events.
-  - Explain that ERTs are archive-owned internal tables, not SQL tables. Homogeneous columns avoid null-padding unrelated shapes.
+  - Merge each KV-IR file's schema tree into the archive-local Merged Schema Tree (MST), a map of every observed path and value type.
+  - Give readers a mental model: an archive is a collection of compact internal tables organized by record shape.
+  - Route each encoded record to an Encoded Record Table (ERT) matching its exact combination of keys and value types; do not reparse raw events.
+  - Explain that ERTs are archive-owned internal tables, not SQL tables. Fields belonging only to other shapes do not add nulls, and typed variables occupy separate ERT columns.
   - Define logtypes as recurring static text patterns stored separately from typed variables.
   - Explain the mechanism rather than size alone: when grouped inputs are similar, CLP can reuse more schemas, log templates, and values across files.
   - Balance compression and keeping related data together against object size, request cost, query latency, and parallelism.
@@ -164,7 +165,7 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
 - Credit YScope for connector leadership.
 - Credit IBM engineers and the Presto community for native connector infrastructure and review.
 - Credit YScope and Uber engineers for production extension and application.
-- End on the proven system, followed by one forward-looking sentence: use metastore and CLP archive metadata to optimize storage and help agents explore petabyte-scale datasets by discovering structure, enumerating recurring patterns, searching by meaning, summarizing matched patterns, and formulating precise queries.
+- End on the proven system, followed by one forward-looking sentence: use metastore and CLP archive metadata both to optimize storage and to give agents the structure, recurring patterns, semantic search, and summaries needed to formulate precise queries over petabyte-scale data.
 
 > Common SQL and distributed execution can coexist with specialized semi-structured storage and native execution.
 
