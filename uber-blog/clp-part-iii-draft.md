@@ -48,7 +48,7 @@ flowchart LR
 
 ## Native Semi-Structured Querying with Presto
 
-The second blog covered viewing compressed logs. Engineers need to project evolving fields, aggregate recurring patterns, and analyze behavior across files and time ranges for on-call diagnosis, experimentation, and broader analytics. Engineers can use Lucene-style searches with pipe commands or write SQL directly. Uber normalizes and validates both forms before sending the resulting SQL to Presto, where existing access controls and tooling apply. Users don't need to know whether an event is in KV-IR or an archive.
+The second blog showed how engineers view individual compressed logs. At Uber, the same data must also support projection of evolving fields, aggregation of recurring patterns, and analysis across files and time ranges for on-call diagnosis, experimentation, and broader analytics. Engineers can use Lucene-style searches with pipe commands or write SQL directly. Uber normalizes and validates both forms before sending the resulting SQL to Presto, where existing access controls and tooling apply. Users don't need to know whether an event is in KV-IR or an archive.
 
 The [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) presents KV-IR and archives as one logical source. Each selected physical file becomes a **split** assigned to a Presto worker. A KV-IR split contains one logical log file, while an archive split may contain many. After consolidation, a logical file can remain in KV-IR until purged, even when already present in one or more archives. Uber's metastore selects one copy. An archive takes priority over KV-IR, and the latest archive wins when several contain the file. A query can therefore cover fresh and archived data without duplicate events.
 
@@ -181,9 +181,9 @@ CLP could perform these operations over filtered paths, unique logtypes, diction
 
 ## Open Source and Collaboration
 
-The open-source [CLP project](https://github.com/y-scope/clp) provides semi-structured compression and search, while the [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) exposes that data through Presto. Today, the connector can query KV-IR and archives together, access exact paths by type, search typed values across wildcard keys, reconstruct complete events, and push supported filters and projections into CLP. Its metadata and split providers are pluggable.
+The core query path is open source. [CLP](https://github.com/y-scope/clp) provides semi-structured compression and search, and the [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) presents KV-IR and archives through one Presto interface. It supports typed paths, wildcard-key value searches, complete-event reconstruction, and filter and projection pushdown. Deployments can integrate their own metadata and split providers.
 
-Uber's production deployment adds a metastore that manages billions of file records and performs Top-N file skipping. The query layer above it handles routing, reliability, and operational controls. The ideas in the previous section build on these deployed capabilities, but still need development and evaluation.
+Uber's production deployment adds a metastore that manages billions of file records and performs Top-N file skipping. The query layer above it handles routing, reliability, and operational controls. This production foundation also gives us a practical starting point for the storage and agent improvements described above. We are still developing and evaluating those improvements.
 
 YScope engineers led the connector implementation. IBM engineers and the Presto community supported the native connector infrastructure and review. YScope and Uber engineers then extended the connector architecture for Uber's production deployment. Presto handles SQL and distributed execution. Through the pluggable connector, CLP searches its compressed representation and reconstructs only the requested results.
 
