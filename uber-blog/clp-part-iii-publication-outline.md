@@ -132,24 +132,26 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - Define operational scope before making a maintenance-effort claim.
 - **Takeaway:** Producer flexibility, freshness, density, SQL, and a five-worker Presto cluster work as one system.
 
-## 7. What Comes Next: Letting Metadata Drive the Data Lifecycle
+## 7. What Comes Next
 
-- **Goal:** Connect today's SQL boundary to three future projects.
-- **Why:** CLP metadata can become an active input to query interaction and archive organization, while operational metadata can extend the same principle to data placement.
+- **Goal:** Present two distinct future directions: smarter placement and consolidation, followed by evidence-guided agent investigation beyond today's guess-and-check process.
+- **Why:** Separating the two ideas avoids treating agent interaction as part of a data lifecycle and gives the longer agent direction appropriate emphasis.
 - **Important points:**
+  - **Smarter data placement and consolidation:** Group the first two short directions under this subheading.
   - **Intelligent tiering:** State that CLP is not intended to replace fully indexed systems serving hundreds of queries per second. Use access, latency, and policy metadata to shorten indexed retention, keep colder data queryable in CLP, and rehydrate selected data into a hot index.
   - **Intelligent consolidation:** Use CLP structure, logtypes, values, source, and query locality to group compatible KV-IR streams while respecting operational boundaries.
-  - **Laying the groundwork for agent search and discovery without guesswork:** Natural-language or semantic input mapped to typed SQL, metadata predicates, and storage operations.
+  - **Beyond guesswork: evidence-guided agent investigation:** Give this direction its own subheading and greater narrative weight. Frame SQL access as solving execution but not discovery, then map natural-language or semantic input to typed SQL, metadata predicates, and storage operations.
+  - **Investigation loop:** Establish an exact scope, expose paths and recurring patterns, match intent, summarize the reduced evidence, and retrieve individual events only for verification.
   - **Intent search:** When an agent knows the concept but not its exact wording or path, `SEMANTIC(...)` filters by meaning.
   - **Query discovery:** Return all recurring patterns under exact filters, or one evidence-backed summary, so an agent can decide what to query next.
   - **Richer output:** Filtered summaries, recurring patterns, structural changes, representative events, and links to exact evidence.
   - Make the example immediately recognizable as Claude Code: use a `claude_code_session_transcripts` table and real transcript structure. Prune top-level `type`, then apply `SEMANTIC(...)` and grouped `PATTERN(...)` to tool-result text under `message.content[*].content`. Keep the search phrase fictional.
   - Explain that `message.content` is polymorphic—string or typed-block array—and tool-result blocks carry `content`, `is_error`, and `tool_use_id`.
   - Mention, without repeating the full query, that `SUMMARY(PATTERN(...))` could return one synopsis of recurring matching failures, with representative evidence and source links.
-  - Explain the native cost model: CLP can operate first on compact paths, deduplicated logtypes, dictionary values, and counts, then retrieve individual events only as evidence. This structural reduction is what could make semantic discovery and summarization practical at petabyte scale.
+  - Explain the native cost model: CLP can operate first on compact paths, deduplicated logtypes, dictionary values, and counts, then retrieve individual events only as evidence. This structural reduction is what makes semantic discovery and summarization practical at petabyte scale.
   - Treat all benefits as hypotheses requiring evaluation.
   - State explicitly that every item above is future work.
-- **Takeaway:** Metadata embedded within CLP and operational metadata maintained above it can become active inputs to placement, consolidation, and retrieval.
+- **Takeaway:** Metadata can guide storage organization and, separately, help agents discover and retrieve relevant evidence without guessing exact paths or terms.
 - **Weighting:** Use tiering → consolidation → querying. Keep the first two to one substantive paragraph each, then end with the longer agent direction and the section's only SQL example.
 
 ## 8. Open Source, Collaboration, and Conclusion

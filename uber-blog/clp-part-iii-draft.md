@@ -145,17 +145,23 @@ During **[MEASUREMENT_WINDOW]**, the service supported **[WEEKLY_ACTIVE_USERS] w
 
 These figures evaluate a serving system, not compression alone. Growing programmatic use points to what comes next.
 
-## What Comes Next: Letting Metadata Drive the Data Lifecycle
+## What Comes Next
 
-Today, metadata describes and narrows data. Three future directions could make it drive placement, organization, and interaction. All remain future work.
+The production system points to two distinct future directions. The first uses metadata to place and consolidate data more intelligently. The second uses CLP's compact structure to help agents discover and query data without guessing exact terms or paths. All remain future work.
+
+### Smarter Data Placement and Consolidation
 
 **Intelligent tiering.** CLP is not intended to replace a fully indexed system serving hundreds of queries per second. Access, latency, and retention metadata could move colder data out of an expensive index while keeping it queryable in CLP. Rising demand could reload selected data into the index. Some streams may justify both tiers.
 
 **Similarity- and policy-aware consolidation.** Schemas, logtypes, values, sources, and query history could identify similar KV-IR streams likely to be searched together. Greater reuse could improve compression and locality, while time, access, retention, freshness, and archive-size constraints govern placement.
 
-**Laying the groundwork for agent search and discovery without guesswork.** Programmatic clients already share the production SQL path with humans. During **[MCP_MEASUREMENT_WINDOW]**, **[MCP_TRAFFIC_SHARE] of query traffic** came through a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/docs/getting-started/intro) server that **[DEFINE: explain which tools or agents it connects to the SQL path]**. Yet agents still guess exact terms and paths: a narrow guess returns nothing, while a broad one returns too many raw events.
+### Beyond Guesswork: Evidence-Guided Agent Investigation
 
-Two operations could help. `SEMANTIC(path, description)` could search by intent when wording is unknown. `PATTERN(path)` could expose recurring text patterns when an agent first needs to discover the data. This future query asks for [Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started) tool-output patterns related to native connector loading failures:
+More than half of current query traffic reaches the production SQL path through a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/docs/getting-started/intro) server. Giving agents SQL access solves query execution, but not query discovery. Before investigating unfamiliar data, an agent must know which paths exist and which values or recurring text patterns are relevant. A narrow guess returns nothing; a broad one may return more raw events than the agent can use.
+
+CLP's compact metadata could support a different investigation loop. Exact predicates would first establish the relevant time, application, or agent version. `PATTERN(path)` could expose recurring text patterns and their frequencies without reconstructing every event. `SEMANTIC(path, description)` could find relevant patterns when the agent knows the concept but not its exact wording. A future `SUMMARY()` could synthesize that reduced evidence set while preserving counts, representative events, and links to their sources.
+
+This future query illustrates the discovery step by asking which recurring [Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started) tool-output patterns relate to native connector loading failures:
 
 ```sql
 SELECT
@@ -171,11 +177,11 @@ GROUP BY PATTERN('message.content[*].content')
 ORDER BY occurrences DESC;
 ```
 
-In Claude Code transcripts, top-level `type` distinguishes user, assistant, and system records. Polymorphic `message.content` may hold text or typed blocks, including tool results. The query selects user records, searches tool-result content by meaning, and groups matches by pattern.
+In Claude Code transcripts, top-level `type` distinguishes user, assistant, and system records. Polymorphic `message.content` may hold text or typed blocks, including tool results. The query narrows the record type, matches tool-result meaning, and groups recurring forms with their counts.
 
-CLP could perform much of this work over structure it already deduplicates. Metastore filters and the MST would first narrow the candidates. Semantic matching could compare intent with unique logtypes and dictionary values before scanning ERTs. `PATTERN()` could enumerate stored patterns and frequencies without reconstructing repeated events, and `SUMMARY()` could synthesize that smaller result with representative evidence and source links. These interfaces still require design and evaluation, but the underlying structural and textual deduplication is what could make them practical at petabyte scale: operate on compact paths, patterns, values, and counts first, then retrieve individual events only when evidence is needed.
+CLP could perform much of this work over structure it already deduplicates. Metastore filters and the MST would narrow the candidates. Semantic matching could compare intent with unique logtypes and dictionary values before scanning ERTs. Pattern discovery could operate on stored forms and counts, retrieving individual events only as evidence. These interfaces still require design and evaluation, but the structural reduction is what makes them practical at petabyte scale. Instead of asking an agent to search raw events by trial and error, the system could first expose the structure and vocabulary of the matching data.
 
-Together, these directions could make metadata embedded within CLP and operational metadata maintained above it active inputs to placement, consolidation, and retrieval.
+Both directions treat metadata embedded within CLP and operational metadata maintained above it as more than passive descriptions. One uses it to guide placement and organization; the other uses it to guide discovery and retrieval.
 
 ## Open Source and Collaboration
 
@@ -183,7 +189,7 @@ Those directions build on a public core, but capability boundaries matter.
 
 The open-source [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) and [CLP repository](https://github.com/y-scope/clp) provide end-to-end semi-structured log compression and Presto querying. Current public capabilities include mixed KV-IR and archive queries, typed exact paths, expression rewriting, pushing filters and projections into CLP, typed value search across unknown keys, complete-event JSON, and pluggable metadata and split filtering.
 
-Uber's production deployment adds its advanced metastore, billion-file metadata scale, proof-based Top-N planning, routing, reliability, and operational controls. The lifecycle projects described above are not current Uber production behavior or automatic open-source connector features.
+Uber's production deployment adds its advanced metastore, billion-file metadata scale, proof-based Top-N planning, routing, reliability, and operational controls. The future directions described above are not current Uber production behavior or automatic open-source connector features.
 
 YScope engineers led the connector implementation. IBM engineers and the Presto community supported the native connector infrastructure and review. YScope and Uber engineers extended and applied the architecture in production. Together, they let Presto retain one SQL and distributed execution model while a pluggable connector preserves storage-specific execution.
 
