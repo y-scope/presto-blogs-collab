@@ -2,17 +2,17 @@
 
 **Document status:** Working publication draft
 
-At Uber, machine learning, AI, streaming, and data platform workloads using the [Compressed Log Processor (CLP) platform](https://github.com/y-scope/clp) produce approximately 25 PB of raw semi-structured logs each month. Built to compress and search evolving semi-structured data, CLP reduces that volume to 750–850 TB. Yet five 48-core [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) workers—Presto's C++ worker implementation—query it directly from Uber's internal object storage, typically at 5–10% CPU utilization and without staging or caching complete archives. How can such a small query cluster provide SQL access at that scale?
+At Uber, the [Compressed Log Processor (CLP) platform](https://github.com/y-scope/clp) now handles logs from machine learning and AI platforms such as Michelangelo and Ray, streaming platforms such as Flink and Kafka, and data platforms such as Hudi and Spark. Together, these workloads produce approximately 25 PB of raw semi-structured logs each month. CLP reduces that volume to 750–850 TB. Yet five 48-core [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) workers—Presto's C++ worker implementation—query this data directly from Uber's internal object storage, typically at 5–10% CPU utilization and without staging or caching complete archives. How can such a small query cluster provide SQL access at that scale?
 
-This blog continues Uber's CLP series. The first blog, [“Reducing Logging Cost by Two Orders of Magnitude Using CLP”](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/), demonstrated compression and write-path savings for Spark logs. The second, [“Modernizing Logging at Uber with CLP (Part II)”](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/), covered production ingestion, retention, and viewing. This third blog follows the system end to end: how Uber keeps newly arriving data searchable, consolidates it into columnar CLP archives, and queries both storage forms with Presto.
+This is the third blog in Uber's CLP series. [“Reducing Logging Cost by Two Orders of Magnitude Using CLP”](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/) demonstrated compression and write-path savings for Spark logs. [“Modernizing Logging at Uber with CLP (Part II)”](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/) covered production ingestion, retention, and viewing. As adoption grew, engineers also needed SQL to select evolving fields, count recurring patterns, and analyze events across files and time ranges for on-call diagnosis, experimentation, and broader analytics. This blog follows that system end to end, from newly arriving data through columnar CLP archives and Presto queries.
 
-Compression is only part of the answer. Across planning and execution, Presto, Uber's metastore, the connector, and CLP use different information to avoid unnecessary work when querying fresh KV-IR and archives.
+Compression alone does not explain the result. Across planning and execution, Presto, Uber's metastore, the connector, and CLP use metadata and encoded structure to avoid unnecessary work.
 
-## When Applications Define the Log Structure
+## When Applications Define Their Own Log Structure
 
-Thousands of applications and platforms emit logs at Uber on independent release schedules, often with multiple versions running at once. As a result, log fields, nesting, and value types can change continuously. One event may be natural-language text with embedded variables. Another may be nested JSON. The same path may contain an integer, string, or object. The data is **semi-structured** because its fields are discoverable without one predefined schema, and **polymorphic** because one path can hold several value types.
+Thousands of applications and platforms at Uber change independently, often with multiple versions running at once. Their log fields, nesting, and value types change with them. One event may contain natural-language text with embedded variables, while another contains nested JSON. The same path may hold an integer, string, or object. The data is **semi-structured** because its fields are discoverable without one predefined schema, and **polymorphic** because one path can hold several value types.
 
-The [second blog in the series](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/) explains how Uber preserved existing messages while adding structured operational context. A record can combine natural language, typed fields, and nested objects whose structure evolves independently. The [μSlope paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui) from OSDI '24, by [YScope](https://yscope.com/), the University of Toronto, and Uber, explains how CLP stores such records.
+The [second blog in the series](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/) explains how Uber preserved existing messages while adding structured operational context. A record can combine natural language, typed fields, and nested objects whose structure evolves independently. The [μSlope paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui), presented at OSDI '24 by [YScope](https://yscope.com/), the University of Toronto, and Uber, explains how CLP stores such records.
 
 Requiring one global table schema would turn routine application changes into coordinated migrations. Storing each event as an untyped JSON string avoids those migrations, but every query must parse the string and rediscover its fields and types. CLP instead records structure as events arrive without requiring one schema for the entire dataset.
 
@@ -20,25 +20,25 @@ Requiring one global table schema would turn routine application changes into co
 
 A query may span newly emitted events and older consolidated data. CLP keeps both queryable through two compressed storage forms. Host log collectors stream events into appendable [**key-value intermediate representation (KV-IR)**](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) files. Later, Uber's aggregation service selects closed KV-IR files for consolidation. A worker streams each selected group into an immutable, columnar CLP archive optimized for compression and search. Consolidation runs asynchronously, so queries continue using KV-IR while the archive is built.
 
-Within KV-IR, each new path-and-type definition appears in the same compressed stream as the encoded values, before the first event that uses it. An uploaded snapshot therefore contains everything CLP needs to interpret and search its events. Configurable triggers upload the current KV-IR contents without closing the local stream. As more events arrive, subsequent uploads replace the same object with a longer snapshot. Once Uber's metastore processes a metadata update, queries can find the new events, typically within 30 seconds to a few minutes of being emitted.
+KV-IR carries structure and values in the same compressed stream. When a new path or type appears, its definition is written before the first event that uses it. Every uploaded snapshot is therefore self-contained and searchable. Configurable triggers upload the current KV-IR contents without closing the local stream. As more events arrive, later uploads replace the same object with a longer snapshot. Once Uber's metastore processes the accompanying metadata update, queries can find the new events, typically within 30 seconds to a few minutes of being emitted.
 
-Archive construction is efficient because CLP processes encoded KV-IR directly instead of reconstructing and reparsing the original events. While streaming the inputs, CLP merges their path-and-type definitions into an archive-wide map called the **Merged Schema Tree (MST)**. Records with the same paths and value types share an internal columnar group called an **Encoded Record Table (ERT)**. Keeping these groups separate avoids filling one wide table with nulls. CLP also stores recurring text patterns, called **logtypes**, separately from typed variable values.
+CLP builds archives directly from encoded KV-IR instead of reconstructing and reparsing the original events. As it streams the inputs, CLP merges their path-and-type definitions into an archive-wide map called the **Merged Schema Tree (MST)**. Events with the same paths and value types are appended to an internal columnar group called an **Encoded Record Table (ERT)**. Separate groups avoid filling one wide table with nulls. CLP also stores recurring text patterns, called **logtypes**, separately from typed variable values.
 
-When consolidation groups files with similar structure and text, CLP has more opportunities to deduplicate structural information, logtypes, and values. Keeping files often queried together in the same archive can also reduce archive opens. Archive grouping must balance these benefits against object size, request cost, query latency, and parallelism.
+Grouping files with similar structure and text creates more opportunities to deduplicate recurring structure, logtypes, and values across files. Keeping files often queried together in one archive can also reduce archive opens. Archive grouping must balance these benefits against object size, request cost, query latency, and parallelism.
 
 ![CLP storage flow from application containers through KV-IR to consolidated archives](figures/clp-storage-flow.svg)
 
 **Figure 1: Host log collectors upload searchable KV-IR snapshots and publish snapshot metadata to Uber's metastore. The metastore selects closed KV-IR files for asynchronous consolidation. Consolidation builds columnar CLP archives and publishes metadata for each new archive.**
 
-Although KV-IR and archives differ physically, the connector exposes both through one Presto query path.
+After an archive is built, its source KV-IR files remain briefly before deletion, so the same events may exist in both forms. Uber's metastore selects one physical copy for each source file: an archive takes priority over KV-IR, and the newest archive wins if more than one contains it. A query can therefore span both storage forms without returning duplicate events.
 
 ## Native Semi-Structured Querying with Presto
 
-The second blog showed how engineers view individual compressed logs. Engineers also need to select evolving fields, count recurring patterns, and analyze events across files and time ranges for on-call diagnosis, experimentation, and broader analytics. Some use Lucene-style log searches, while others write SQL directly. Uber normalizes and validates both inputs before sending SQL to Presto, where existing access controls and tooling apply.
+Engineers use either Lucene-style log searches or SQL directly. Uber normalizes and validates both inputs before sending SQL to Presto, where existing access controls and tooling apply.
 
-Presto must know the type of every SQL expression while planning a query. A path in CLP, however, may be absent or hold different types across events. An optional table schema can bind common path-and-type pairs, such as `timestamp` and `event.request_id`, to ordinary typed columns without rewriting CLP data.
+Presto must know the type of every SQL expression while planning a query. A path in CLP, however, may be absent or hold different types across events. An optional Presto table schema can expose common path-and-type pairs, such as `timestamp` and `event.request_id`, as ordinary typed columns without rewriting CLP data.
 
-With or without that schema, the current [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) provides [typed functions](https://docs.yscope.com/presto/connector/clp.html). A function can name an exact path, including one already bound as a column, use a wildcard for a variable path segment, or search compatible values across every field. CLP already supports inferring value types from query expressions, and exposing that capability through the Presto connector is on our to-do list.
+With or without that schema, the [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) provides [typed functions](https://docs.yscope.com/presto/connector/clp.html). They can address an exact path, use a wildcard for a variable path segment, or search compatible values across every field. CLP already infers value types from query expressions, and we plan to expose that capability through the Presto connector.
 
 One query can combine these access patterns:
 
@@ -56,9 +56,7 @@ ORDER BY timestamp DESC
 LIMIT 100;
 ```
 
-Here, **native** applies at two levels. At the SQL level, users combine ordinary columns with expressions for evolving paths.
-
-At the execution level, the connector carries field requests and filters directly into CLP. It does not first pass every event through a generic serializer/deserializer (SerDe) to materialize a row. Nor does it reconstruct JSON merely to call `JSON_EXTRACT_SCALAR()`. CLP searches the encoded representation and reconstructs only the requested results.
+Here, **native** applies at two levels. At the SQL level, users combine ordinary columns with expressions for evolving paths. At the execution level, the connector invokes CLP within each Presto Native worker process and carries field requests and supported filters into the encoded scan. It does not first pass every event through a generic serializer/deserializer (SerDe) to materialize a row, nor reconstruct JSON merely to call `JSON_EXTRACT_SCALAR()`. CLP searches the encoded representation and reconstructs only the requested results.
 
 [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) explains the underlying query rewriting. The preceding **[PrestoDB blog](PRESTO_BLOG_URL)** compares CLP with [Variant](https://parquet.apache.org/docs/file-format/types/variantencoding/) and explains how future Variant operators could simplify exact-path access.
 
@@ -66,7 +64,7 @@ Together, the SQL interface and direct CLP execution provide native semi-structu
 
 ## Exploiting Data Knowledge at Every Layer
 
-Metadata provides that reduction at three points.
+The query path reduces work at three points.
 
 **1. Prune files before scheduling.** Uber's metastore compares query filters with per-file metadata such as event-time bounds, application, host, job, and correlation ID. A file that cannot match never becomes a **split**—a file-processing task assigned to one worker—and is never opened. The open-source connector is agnostic to the metadata provider, so each deployment can integrate a provider suited to its catalog and storage system.
 
@@ -74,13 +72,15 @@ Metadata provides that reduction at three points.
 
 > **Latest-N file skipping: guaranteed and approximate modes**
 >
-> In guaranteed mode, the metastore streams pruned candidates by descending `max_timestamp` and accumulates exact matching-event counts. When the count first reaches `N`, it locks a watermark at the minimum `min_timestamp` of the files selected so far. It continues selecting every file whose `max_timestamp` is at or above that watermark, covering overlapping time ranges, and stops at the first file below it. Because later candidates are no newer, they cannot change the latest `N` results.
+> In guaranteed mode, candidate retrieval returns pruned files in descending `max_timestamp` order. The metastore accumulates exact matching-event counts. When the count first reaches `N`, it sets a watermark at the minimum `min_timestamp` of the files selected so far. It continues selecting every file whose `max_timestamp` is at or above that watermark, covering overlapping time ranges, and stops at the first file below it. Because later candidates are no newer, they cannot change the latest `N` results.
 >
 > If any predicate lacks an exact per-file count, guaranteed mode falls back to every file remaining after pruning. Users may instead opt into approximate mode, which uses estimated counts to reduce work but can omit events belonging in the true latest `N`. This planning happens before split creation, so skipped files are never scheduled or opened. Uber runs the optimization in production. It is not yet part of the open-source connector.
 
-**3. Narrow the scan inside each archive.** Before reading encoded events, CLP uses the archive's path-and-type map to find relevant column groups. Logtype and value dictionaries then rule out text patterns and values that cannot match. CLP advances to the relevant encoded columns and reconstructs only matching results.
+**3. Narrow the scan inside each archive.** Before reading encoded events, CLP uses the archive's path-and-type map to find relevant ERTs and columns. Logtype and value dictionaries then rule out text patterns and values that cannot match. CLP advances to the relevant encoded streams and reconstructs only matching results.
 
-These optimizations are most effective for selective queries. During planning, Uber detects broad searches and automatically suggests narrower time or metadata filters. That small prompt often leads users to add constraints they already know, substantially reducing the scan. Users can still proceed when they need the complete result.
+**Combined impact.** On average across the measured production query population, time-range filtering alone would require the system to examine approximately 218,660 times as many log events as Uber's full query path. The reduction combines files eliminated by metadata, older files excluded by latest-N planning, and records ruled out by CLP inside selected archives.
+
+These optimizations are most effective for selective queries. During planning, Uber detects broad searches and automatically suggests narrower time or metadata filters. This prompt often leads users to add constraints they already know, substantially reducing the scan. Users can still proceed when they need the complete result.
 
 ## Production Results
 
@@ -90,45 +90,53 @@ A five-node cluster, with one 48-core Presto Native worker per node, serves Uber
 
 The workers typically use only 5–10% of their CPU capacity. We also rate-limit object-storage reads to reduce parallelism and preserve bandwidth for other workloads. Queries still meet our latency needs, leaving headroom as demand or scope grows.
 
+Only a few engineers maintain the production CLP ingestion and query service alongside their broader responsibilities, including the metastore, consolidation, and five-node Presto cluster.
+
 **[Figure 2 TODO: Plot weekly active users and daily query volume from May through the approved publication cutoff.]**
 
-> **Publication evidence required:** Add one representative timestamp-only versus richer-metadata pruning comparison. Confirm that the user, query-volume, and response-time figures describe the same production query population and approved measurement window. Monthly ingest is not per-query scan volume. Define the operational scope before making a maintenance-effort claim.
+> **Publication evidence required:** Record the measurement window and calculation method for the average 218,660× reduction in log events examined. Confirm that the user, query-volume, and response-time figures describe the same production query population and approved measurement window. Confirm the MCP traffic share, denominator, and measurement window. Monthly ingest is not per-query scan volume. Confirm publication approval for the scoped maintenance-effort claim.
 
 ## What Comes Next
 
-These production results reflect the full query path, not compression alone. They also motivate two next steps: smarter data placement and better tools for agents exploring unfamiliar data.
+These results reflect the full query path, not compression alone. They also motivate two next steps: smarter data placement and better tools for agents exploring unfamiliar data.
 
 ### Smarter Data Placement and Consolidation
 
-**Intelligent tiering.** CLP could remain the default queryable tier, with a hot index provisioned only for tables or time ranges whose access frequency, query shape, and latency needs justify it. CLP would retain the longer history and quickly restore selected data to the hot index if demand rises.
+**Intelligent tiering.** CLP could be the default queryable tier, with a hot index provisioned only for tables or time ranges whose access frequency, query shape, and latency needs justify it. CLP would retain the longer history and quickly restore selected data to the hot index if demand rises.
 
 **Grouping similar data during consolidation.** CLP's schema and logtype metadata, source metadata, and query history could guide which closed KV-IR files share an archive. Similar inputs increase cross-file deduplication. Placing data that is often queried together in one archive reduces archive opens. Time range, retention, freshness, and archive size would still constrain each group.
 
-### Beyond Guesswork: Putting CLP Metadata to Work for Agents
+### Beyond Guesswork: Helping Agents Find and Understand Logs
 
-More than half of current query traffic reaches the production SQL path through a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/docs/getting-started/intro) server. SQL lets agents execute queries, but it does not tell them what to query. With unfamiliar data, agents may not know which paths, types, or patterns exist, or the exact wording to search for. Trying keywords can return nothing or more raw events than the agent can use.
+More than half of production CLP queries come from AI agents through a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/docs/getting-started/intro) server. Agents use them for root cause analysis, behavior analytics, and exploratory debugging. MCP lets agents run queries, but effective analysis also requires context: which fields exist, which log format patterns remain after filtering, and what wording the data uses.
 
-CLP already stores much of the information needed to get started. After filtering by time, application, or version, the query service could place the remaining paths, types, distinct logtypes, and their counts into the agent's context. The agent could then use the observed structure to write a precise query, or search by meaning and summarize matches without reconstructing every event.
+Without that context, agents guess. To find native connector load failures in the Claude Code data below, for example, an agent might search `message.content[*].content` for `connector AND ("load failed" OR "undefined symbol" OR "not registered")`. The search works only if both the path and terms fit the data. Different wording may return nothing, while broad terms may return more raw events than the agent can use.
 
-Finding relevant events is only the first step. Logs often repeat the same message thousands of times while changing only a timestamp, request ID, path, or other variable. Returning all of them consumes search bandwidth and the agent's limited context while hiding whether the result contains one dominant failure or many different problems.
+CLP already stores much of the missing context. After time, application, or version filters narrow the candidate data, a query service could preload the agent's context with the available fields, the log format patterns that occur, and their counts. The agent could then build a precise follow-up query from what is actually present.
 
-Three operations could reduce that result in stages. `SEMANTIC(path, description)` finds events by meaning when the agent does not know the exact wording. `PATTERN(path)` then answers, “Which distinct message forms did the search find, and how often?” by grouping messages that differ only in variable values. If the pattern list is still long, `SUMMARY()` could explain the smaller set while preserving counts, representative events, and links to the source evidence. The agent can then decide which pattern merits a deeper query.
+We are exploring three complementary ways to put that information to work. An agent could use any of them independently or combine them in any order:
+
+- **Inspect structure with `SCHEMA(<path>)`.** Return the Merged Schema Tree below a specified path, including observed paths and types.
+- **Expose log format patterns with `PATTERN(<path>)`.** Emit the inferred pattern for each value so SQL can project, group, or count it.
+- **Search by meaning with `SEMANTIC(<path>, <natural-language query>)`.** Find relevant messages without knowing their exact wording.
 
 > **Example: Which failures recur, and on which branches?**
 >
-> Suppose an agent wants to know which native connector load failures recur and whether they are concentrated on particular source-code branches. `SEMANTIC()` finds conceptually related [Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started) tool output without exact keywords. `PATTERN()` maps the matches to recurring logtypes, and `gitBranch` shows where each one occurred.
+> An agent wants to know which native connector load failures recur and whether they are concentrated on particular source-code branches. [Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started) stores tool results in `user` records, with their text under `message.content[*].content`. This query combines `SEMANTIC()` and `PATTERN()` to answer that question without guessing every possible failure phrase.
+>
+> **Native SQL query**
 >
 > ```sql
 > SELECT
->     CLP_GET_STRING('gitBranch') AS branch, -- where the failure occurred
->     PATTERN('message.content[*].content') AS failure_pattern, -- recurring message shape
->     count(*) AS occurrences -- events represented by this branch-pattern pair
+>     CLP_GET_STRING('gitBranch') AS branch, -- source-code branch
+>     PATTERN('message.content[*].content') AS failure_pattern, -- inferred format pattern
+>     count(*) AS occurrences -- events per branch and pattern
 > FROM clp.claude_code_session_transcripts
 > WHERE CLP_GET_STRING('type') = 'user' -- Claude Code stores tool results in user records
 >   AND SEMANTIC(
 >       'message.content[*].content',
 >       'tool output reporting a native connector load failure'
->   ) -- match the concept without guessing its exact wording
+>   ) -- search by meaning rather than exact terms
 > GROUP BY
 >     CLP_GET_STRING('gitBranch'),
 >     PATTERN('message.content[*].content')
@@ -143,24 +151,24 @@ Three operations could reduce that result in stages. `SEMANTIC(path, description
 > | `feature/dynamic-connector` | `Connector factory <*> was not registered` | 19 |
 > | `main` | `Could not open shared object file <*>` | 6 |
 >
-> Claude Code stores tool results in `user` records, and `message.content` may hold text or typed blocks. The `<*>` placeholders represent variable values. In the first row, 47 events with different library paths and symbol names share one logtype. Instead of reading 72 raw events, the agent sees three recurring branch-and-failure combinations and retrieves individual events only when it needs evidence.
+> The `<*>` placeholders represent changing values. In the first row, 47 events with different library paths and symbol names share one log format pattern. Instead of receiving 72 raw events, the agent sees three recurring branch-and-failure combinations. It can use those patterns in a follow-up query or retrieve examples from the combinations that matter.
 
-CLP could perform these operations over filtered paths, deduplicated logtypes, dictionary values, and stored counts, deferring event reconstruction until the agent requests examples or source evidence. These directions still need refinement and evaluation.
+These interfaces can operate on CLP's stored schema metadata and deduplicated log format patterns before reconstructing individual events. Semantic matching could evaluate those patterns first, then fetch raw events only as evidence. Working over that reduced representation is what makes this direction practical at petabyte scale. We are refining and evaluating these interfaces.
 
 ## Open Source and Collaboration
 
 The core query path is open source. [CLP](https://github.com/y-scope/clp) provides semi-structured compression and search, and the [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) presents KV-IR and archives through one Presto interface. It supports typed exact and wildcard paths, typed value searches across all fields, complete-event reconstruction, and filter and projection pushdown. Deployments can integrate their own metadata and split providers.
 
-Uber's production deployment adds a metastore that manages billions of file records and performs Top-N file skipping. The query layer above it handles routing, reliability, and operational controls. This production foundation also gives us a practical starting point for the storage and agent improvements described above. We are still developing and evaluating those improvements.
+Uber's production deployment adds a metastore that manages billions of file records and performs Top-N file skipping. The query layer above it handles routing, reliability, and operational controls.
 
 YScope engineers led the connector implementation. IBM engineers and the Presto community supported the native connector infrastructure and review. YScope and Uber engineers then extended the connector architecture for Uber's production deployment. The resulting boundary keeps Presto responsible for SQL and distributed execution while CLP searches its compressed representation and reconstructs only the requested results.
 
 ## Conclusion
 
-At 25 PB per month, efficient queries depend on avoiding unnecessary work at every layer. Uber's metastore reduces the files that Presto schedules. Within each selected file, CLP uses its encoded structure and metadata to avoid decoding and reconstructing unrelated data. Presto queries updated KV-IR snapshots and columnar archives through one SQL path.
+At 25 PB per month, query speed depends on avoiding unnecessary work at every layer. Uber's metastore reduces the files that Presto schedules. Within each selected file, CLP uses encoded structure and metadata to avoid decoding and reconstructing unrelated data. Presto queries updated KV-IR snapshots and columnar archives through one SQL path.
 
-The broader lesson is that a common SQL engine does not require one physical storage model. Presto handles SQL and distributed execution, while CLP preserves and searches application-defined semi-structured data in compressed form. Together, they provide an Uber-wide query service with substantial capacity for more queries and workloads.
+The broader lesson is that a common SQL engine does not require one physical storage model. Presto handles SQL and distributed execution, while CLP preserves and searches application-defined semi-structured data in compressed form. Together, they provide an Uber-wide query service with headroom for more queries and workloads.
 
-Next, we want to put metastore and CLP archive metadata to further use: optimize data placement, help agents generate queries from observed structure and patterns, and support semantic search and evidence-backed summaries.
+Next, we want to put metastore and CLP archive metadata to further use: optimize data placement, help agents generate queries from observed structure and patterns, and supply semantic matches that agents can summarize with supporting evidence.
 
 [^compression-comparison]: The [first blog in the series](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/) reported 169× compression for Spark messages alone. Today's 29–33× figure covers a broader set of workloads, with records enriched by operational fields such as hostnames, tags, and trace IDs (UUIDs). Trace IDs are effectively unique and contain little repetition for a compressor to exploit.
