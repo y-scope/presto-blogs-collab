@@ -6,7 +6,7 @@
 - **Publication target:** Uber Engineering Blog
 - **Purpose:** Preserve approved facts, technical mechanisms, capability boundaries, attribution, editorial constraints, and remaining publication work behind the concise article
 
-This document is intentionally more detailed than the article. The draft should remain production-led and accessible to Uber Engineering readers. Deeper storage-format, Variant/shredding, and connector-development details belong in the earlier Presto article, assumed to publish first at **[PRESTO_BLOG_URL](PRESTO_BLOG_URL)**.
+This document is intentionally more detailed than the article. The draft should remain production-led and accessible to Uber Engineering readers. Deeper storage-format, Variant/shredding, and connector-development details belong in the earlier PrestoDB blog post, assumed to publish first at **[PRESTO_BLOG_URL](PRESTO_BLOG_URL)**.
 
 ---
 
@@ -322,7 +322,7 @@ Presto expects relation shape, column names, and expression types during plannin
 - Weaker field-level projection and filtering
 - Loss of CLP's encoded execution advantages
 
-The article should not claim that every binary dynamic-document format has these costs. The detailed Variant/shredding comparison belongs in the earlier Presto article.
+The article should not claim that every binary dynamic-document format has these costs. The detailed Variant/shredding comparison belongs in the earlier PrestoDB blog post.
 
 ### Why retain SQL
 
@@ -333,7 +333,7 @@ The article should not claim that every binary dynamic-document format has these
 
 The goal is not merely to make Presto accept JSON. It is to carry log-query intent through SQL planning into CLP execution.
 
-The current typed CLP accessors bridge PrestoDB's type system. Once Presto supports Variant operators end to end, the connector can expose the same paths through standard Variant syntax without changing CLP storage or its physical scan. Refer detailed Variant-layer, physical-scan, and connector-boundary discussion to the earlier Presto community article.
+The current typed CLP accessors bridge PrestoDB's type system. Once Presto supports Variant operators end to end, the connector can expose the same paths through standard Variant syntax without changing CLP storage or its physical scan. Refer detailed Variant-layer, physical-scan, and connector-boundary discussion to the earlier PrestoDB blog post.
 
 ---
 
@@ -739,7 +739,7 @@ Relevant upstream changes:
 - [PR #27653](https://github.com/prestodb/presto/pull/27653): connector-factory registration from dynamically loaded native code
 - [PR #27652](https://github.com/prestodb/presto/pull/27652): connector-specific serialized values routed to native deserialization
 
-Keep detailed packaging, ABI, handle serialization, and factory-map mechanics in the earlier Presto article.
+Keep detailed packaging, ABI, handle serialization, and factory-map mechanics in the earlier PrestoDB blog post.
 
 ---
 
@@ -842,7 +842,7 @@ Do not revisit semantic search in the conclusion. The article must end on the pr
 
 ## 17. Publication Checklist
 
-- Replace every `PRESTO_BLOG_URL` placeholder with the published earlier Presto article URL.
+- Replace every `PRESTO_BLOG_URL` placeholder with the published earlier PrestoDB blog-post URL.
 - Confirm the measurement window for 25 PB/month and 750–850 TB/month.
 - Confirm 5–10% remains the approved description of typical worker CPU.
 - Confirm 30-second-to-few-minute freshness remains current.

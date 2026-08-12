@@ -23,7 +23,7 @@ Readers should understand:
 
 - [Uber CLP Part II](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/): appender adoption, operational enrichment, and timed publication of active streams.
 - [YScope's August 2025 post](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82): original motivation and query mechanics.
-- Earlier Presto community article, **[PRESTO_BLOG_URL](PRESTO_BLOG_URL)**: current pluggable connector, CLP versus Variant, and connector-author lessons.
+- Earlier PrestoDB blog post, **[PRESTO_BLOG_URL](PRESTO_BLOG_URL)**: current pluggable connector, CLP versus Variant, and connector-author lessons.
 - This article: Uber's production lifecycle, Presto query path, production evidence, and future direction.
 
 Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP logtype), and accessor material to explain the production scan.
@@ -61,7 +61,7 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - Unlike the Part II design, CLP compression now runs in the host-local collector rather than the log appender.
   - If a producer container exits, the collector can still compress and publish logs already emitted by that container.
   - Host collectors append compressed KV-IR locally without closing the active stream.
-  - Summarize rather than re-explain Part II's publication design: configurable timers publish active KV-IR data and metadata before rotation.
+  - Summarize rather than re-explain Part II's publication design: configurable timers publish the current KV-IR contents and metadata while the local stream remains open.
   - Fresh data becomes discoverable in roughly 30 seconds to a few minutes.
 - **Takeaway:** Fresh logs are already compressed, structured, and searchable before archive construction.
 
@@ -98,8 +98,8 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - Explain the SQL surface: an optional convenience schema exposes common paths as ordinary columns; typed accessors handle polymorphic paths; wildcard functions search values across unknown keys.
   - Refer to MST, ERT, and logtype definitions from Section 3 rather than defining them again.
   - Use one SQL example with typed paths, wildcard value search, filters, and Top-N.
-  - State that native Variant operators can replace CLP accessor syntax once Presto supports them end to end; CLP storage and physical execution remain unchanged.
-  - Refer detailed Variant-layer, physical-scan, and connector-boundary discussion to the earlier Presto community article.
+  - State that native Variant operators can replace exact-path accessor syntax once Presto supports them end to end; efficient unknown-key search and physical execution remain CLP-specific.
+  - Refer detailed Variant-layer, physical-scan, and connector-boundary discussion to the earlier PrestoDB blog post.
   - The connector adds typed SQL access to CLP. Presto supplies the remaining relational semantics.
   - State the consequence of rewriting and pushdown without repeating the optimizer walkthrough: supported intent reaches the split-local native scan, while unsupported expressions remain in Presto.
   - Native workers invoke CLP against compressed object-storage streams without staging complete archives.

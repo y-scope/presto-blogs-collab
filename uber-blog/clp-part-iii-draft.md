@@ -2,11 +2,11 @@
 
 **Document status:** Working publication draft
 
-At Uber, workloads in machine learning, artificial intelligence, streaming, and data platforms currently onboarded to the [Compressed Log Processor (CLP) platform](https://github.com/y-scope/clp) produce approximately 25 petabytes (PB) of raw semi-structured logs each month. CLP compresses that data to 750–850 terabytes (TB). Yet five 48-core [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) workers—Presto's C++ worker implementation—serve it directly from Uber's internal object storage, typically at 5–10% central processing unit (CPU) utilization and without staging or caching complete archives. How can such a small query cluster provide SQL access at that scale?
+At Uber, workloads in machine learning, artificial intelligence, streaming, and data platforms currently onboarded to the [Compressed Log Processor (CLP) platform](https://github.com/y-scope/clp) produce approximately 25 PB of raw semi-structured logs each month. Built to compress and search evolving semi-structured data, CLP reduces that volume to 750–850 TB. Yet five 48-core [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) workers—Presto's C++ worker implementation—serve it directly from Uber's internal object storage, typically at 5–10% CPU utilization and without staging or caching complete archives. How can such a small query cluster provide SQL access at that scale?
 
-[Part I](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/) demonstrated CLP's compression and write-path savings for Spark logs. [Part II](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/) expanded that work into production ingestion, retention, and viewing. This article follows the data into native semi-structured querying with Presto.
+[Part I](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/) demonstrated CLP's compression and write-path savings for Spark logs. [Part II](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/) covered production ingestion, retention, and viewing. This article follows that data into native semi-structured querying with Presto.
 
-Compression is only part of the answer. Growing logs are searchable before asynchronous consolidation reorganizes them for denser retention. Presto provides one governed query path across both states. Uber's metadata catalog (the metastore), the connector linking Presto to CLP, and CLP itself then use their distinct knowledge to avoid unnecessary work. The story begins where the schema originates: independently deployed producers.
+Compression is only part of the answer. Growing logs remain searchable before consolidation builds denser archives. Presto gives both forms one governed query path. Uber's metadata catalog, the CLP connector, and CLP readers then avoid work at different layers. The story begins with independently deployed producers.
 
 ## When Producers Control the Log Schema
 
@@ -24,7 +24,7 @@ A CLP archive achieves density by organizing many events together, but accumulat
 
 The current deployment also moves compression out of each application's log appender and into a collector on every host. The collector monitors container logs, enriches events, and appends them to compressed KV-IR. Because it outlives producer containers, it can finish processing and publishing their emitted logs after they exit.
 
-Following Part II's design, configurable timers publish active KV-IR data and metadata before finalization. New events generally become searchable within 30 seconds to a few minutes. Freshness no longer waits for archiving.
+Following Part II's design, configurable timers publish the current contents of an active KV-IR file and its metadata while the local stream remains open. The metastore makes each published version discoverable, so new events generally become searchable within 30 seconds to a few minutes. Freshness no longer waits for archiving.
 
 ## Dense Archives: Asynchronous Columnar Consolidation
 
@@ -48,13 +48,13 @@ flowchart LR
 
 ## Native Semi-Structured Querying with Presto
 
-At query time, users should not need to know which form holds an event. Some use Lucene-style field and keyword expressions followed by pipes for projection and aggregation. Others write SQL. Uber translates the log-oriented form to SQL and validates either input before it enters the same governed Presto path. Both gain the joins, access controls, and tooling of Uber's Presto ecosystem.
+At query time, users need not know which form holds an event. Some use Lucene-style field and keyword expressions with pipes for projection and aggregation. Others write SQL. Uber translates the first form and validates both before they enter one governed Presto path, gaining its joins, access controls, and tooling.
 
 The [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) presents KV-IR and archives as one logical source. Each selected file becomes a **split**, a unit of work assigned to a Presto worker. One query may use both forms. During temporary overlap, Uber's metastore marks an archive authoritative only for its incorporated KV-IR files, preventing duplicate events.
 
-Presto requires every expression to have a known result type, but a CLP path may be absent or polymorphic. Lakehouse users may recognize the logical problem from [Variant](https://parquet.apache.org/docs/file-format/types/variantencoding/), whose dynamic values retain nested types, and optional Parquet [Variant shredding](https://parquet.apache.org/docs/file-format/types/variantshredding/), which materializes selected paths. The preceding **[Presto community article](PRESTO_BLOG_URL)** compares those layers with CLP.
+Presto requires every expression to have a known result type, but a CLP path may be absent or polymorphic. Lakehouse users may recognize the logical problem from [Variant](https://parquet.apache.org/docs/file-format/types/variantencoding/), whose dynamic values retain nested types, and optional Parquet [Variant shredding](https://parquet.apache.org/docs/file-format/types/variantshredding/), which materializes selected paths. The preceding **[PrestoDB blog post](PRESTO_BLOG_URL)** compares those layers with CLP.
 
-PrestoDB does not yet support Variant end to end, so the connector supplies a typed SQL surface. An optional table schema exposes common path-and-type pairs, such as `timestamp` and `application_id`, as ordinary columns. [Typed accessors](https://docs.yscope.com/presto/connector/clp.html) distinguish polymorphic values: `CLP_GET_BIGINT('status')` selects integers, while `CLP_GET_STRING('status')` selects strings. A typed wildcard tests values across unknown keys, and `CLP_GET_JSON_STRING()` reconstructs a complete event. Future standard Variant operators could replace this syntax without changing CLP storage or execution:
+PrestoDB does not yet support Variant end to end, so the connector supplies a typed SQL surface. An optional table schema exposes common path-and-type pairs, such as `timestamp` and `application_id`, as ordinary columns. [Typed accessors](https://docs.yscope.com/presto/connector/clp.html) distinguish polymorphic values: `CLP_GET_BIGINT('status')` selects integers, while `CLP_GET_STRING('status')` selects strings. A typed wildcard tests values across unknown keys, and `CLP_GET_JSON_STRING()` reconstructs a complete event. Future standard Variant operators could replace the exact-path accessors without changing CLP storage or execution. Efficient unknown-key search would remain a CLP-specific storage operation. Today, a query can combine both:
 
 ```sql
 SELECT
@@ -95,7 +95,7 @@ ORDER BY timestamp DESC
 LIMIT N
 ```
 
-Presto's distributed **Top-N** operator ordinarily consumes every scheduled candidate split before determining the newest `N` results. At Uber, we added a correctness proof during file enumeration, before Presto creates splits. Using file time bounds and exact matching-event counts, the provider can prove when older files cannot displace the newest `N` matches covered. Those files never become splits, so workers never open them. This is distinct from pruning: an excluded file may contain matches but cannot change the requested Top-N.
+Presto's distributed **Top-N** operator ordinarily consumes every scheduled candidate split before determining the newest `N` results. At Uber, we added a correctness proof during file enumeration, before Presto creates splits. Using file time bounds and exact matching-event counts, the provider can prove when older files cannot displace the newest `N` matches accounted for by files enumerated so far. Those older files never become splits, so workers never open them. This is distinct from pruning: an excluded file may contain matches but cannot change the requested Top-N.
 
 The provider considers files by descending maximum timestamp. Once exact counts for supported file-level filters reach `N`, it records the earliest timestamp covered and includes every file whose range overlaps that point. It stops only when the next maximum timestamp is older. A row-level filter that prevents an exact proof triggers the complete pruned candidate set. Trustworthy time bounds and counts are essential. Append-only publication and ordering help but are insufficient alone. This optimization is an Uber production extension, not a current open-source feature.
 
@@ -129,7 +129,7 @@ flowchart LR
     search --> presto
 ```
 
-**Figure 2: File pruning removes data that cannot match. The separate Top-N proof uses time bounds, exact counts, and overlap handling to avoid scheduling older splits safely, with a complete fallback when no proof is possible. CLP metadata then narrows each selected archive.**
+**Figure 2: File pruning removes data that cannot match. The separate Top-N proof uses time bounds, exact counts, and overlap handling to safely avoid creating splits for older files, with a complete fallback when no proof is possible. CLP metadata then narrows each selected archive.**
 
 Broad searches remain expensive. The gain comes from avoiding each cost at the layer that understands it: file opens and transfers at the metastore, then decompression, parsing, and reconstruction inside CLP.
 
@@ -179,7 +179,7 @@ Together, these directions could make metadata embedded within CLP and operation
 
 ## Open Source and Collaboration
 
-Those future directions build on a public core, but the boundary between open source, Uber production, and future work matters.
+Those directions build on a public core, but capability boundaries matter.
 
 The open-source [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) and [CLP repository](https://github.com/y-scope/clp) provide end-to-end semi-structured log compression and Presto querying. Current public capabilities include mixed KV-IR and archive queries, typed exact paths, expression rewriting, pushing filters and projections into CLP, typed value search across unknown keys, complete-event JSON, and pluggable metadata and split filtering.
 
@@ -191,6 +191,6 @@ YScope engineers led the connector implementation. IBM engineers and the Presto 
 
 At 25 PB per month, the goal is not to push every retained byte through five workers faster. It is to keep irrelevant work from reaching those workers at all.
 
-The lifecycle does that without sacrificing producer independence or freshness. Host collectors make active streams searchable as KV-IR. Asynchronous consolidation builds denser columnar archives. Presto presents both through one governed query path. Uber's metastore narrows files, proof-based planning can avoid older splits, and CLP metadata guides each selected archive scan before values are reconstructed.
+The lifecycle does that without sacrificing producer independence or freshness. Host collectors make active streams searchable as KV-IR. Asynchronous consolidation builds denser columnar archives. Presto presents both through one governed query path. Uber's metastore narrows files, proof-based planning can avoid creating splits for older files, and CLP metadata guides each selected archive scan before values are reconstructed.
 
 That is the transferable result: a common SQL and distributed execution layer can coexist with specialized semi-structured storage. Evolving data can remain faithful to its producers and still be served economically at production scale.
