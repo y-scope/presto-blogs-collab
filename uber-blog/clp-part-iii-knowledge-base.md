@@ -90,7 +90,9 @@ The causal answer is:
 - Future intelligent semi-structured data lifecycle
 - Open-source and collaboration boundary
 - Conclusion on the proven production system
-- Total target: 2,300–2,600 words; 3,000-word hard maximum
+- Current draft target: approximately 2,600 words before final evidence
+- Hard maximum: 3,000 words
+- Treat the remaining budget as headroom, not a target. Use it only for required production evidence or genuine comprehension gaps; otherwise prefer the shorter version. Do not trim the future section merely to preserve the current draft length.
 
 ### Story boundary
 
@@ -185,7 +187,7 @@ Research reference: [μSlope: High Compression and Fast Search on Semi-Structure
 - Compression runs in the collector rather than the producer's log appender, allowing the collector to finish processing and publishing already-emitted logs after the producer container exits.
 - KV-IR is compressed incrementally and appendable: the collector keeps the active compressed file open as new records arrive.
 - KV-IR extends the IR stream introduced in Part I from message-oriented logs to key-value events.
-- It applies μSlope's structural model incrementally: schema-tree node insertions and per-event references into the evolving tree are serialized alongside encoded values.
+- It applies CLP's semi-structured storage model incrementally, as described in the μSlope paper: schema-tree node insertions and per-event references into the evolving tree are serialized alongside encoded values.
 - Schema-tree updates precede the events that reference them. A consumer therefore has a fully materialized schema tree for every event in the stream prefix it has read.
 - During archive construction, CLP merges each KV-IR file's schema tree into the archive-local tree and appends each encoded record to the ERT matching its key-and-type shape. It does not reparse raw events to rediscover their structure.
 - On a configurable publication interval, the collector uploads the current file extent without closing the active local stream.
@@ -199,7 +201,7 @@ Research reference: [μSlope: High Compression and Fast Search on Semi-Structure
 
 - [KV-IR](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) is the streaming-compressed key-value internal-representation format for dynamically structured logs.
 - Present KV-IR as an extension of the IR stream introduced in Part I, from message-oriented logs to semi-structured key-value events.
-- KV-IR streams the structural ideas described by μSlope: it serializes schema-tree updates and represents each event's schema through references to that evolving tree alongside encoded values.
+- KV-IR makes CLP's structural design, described in the μSlope paper, streamable: it serializes schema-tree updates and represents each event's schema through references to that evolving tree alongside encoded values.
 - The schema tree remains fully materialized for the current readable prefix as the KV-IR stream grows; completeness is not deferred until the stream ends.
 - The immutable archive persists the resulting ERTs in denser physically columnar form with richer search metadata.
 - KV-IR buffers less data than the archive format and is suitable for low-latency and resource-constrained ingestion.

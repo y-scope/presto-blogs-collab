@@ -1,7 +1,7 @@
 # Fresh Logs, Dense Archives, Native Semi-Structured Querying with Presto: CLP at Uber (Part III)
 
 - **Type:** Production architecture case study
-- **Length:** 2,300–2,600 words
+- **Length:** Approximately 2,600 words before final evidence; 3,000-word hard cap
 - **Audience:** Presto, observability, storage, data-platform, streaming, machine-learning, and artificial-intelligence engineers
 - **Central question:** How can five Presto Native workers provide SQL access to data from workloads producing roughly 25 petabytes (PB) of raw logs per month?
 
@@ -41,7 +41,7 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
 - **Important points:**
   - Use message and nested-JSON examples before defining semi-structured and polymorphic data.
   - Refer to Part II for appender and enrichment mechanics.
-  - Repeat only the resulting storage problem: original messages, structured fields, and evolving enrichment coexist.
+  - Repeat only the resulting storage problem: original messages, typed fields, nested objects, and evolving enrichment coexist.
   - Treat natural-language messages, structured envelopes, and evolving JSON as one semi-structured continuum rather than rigid categories.
   - Keep the schema foundation brief. Contrast structural preservation with whole-document parsing, then move to the production lifecycle.
   - Link the μSlope paper.
@@ -56,7 +56,7 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
   - YScope's CLP project supplies KV-IR and its encoder, reader, and search capabilities.
   - Uber supplies collection, enrichment, publication, metadata integration, and object storage.
   - KV-IR extends Part I's message-oriented intermediate representation to key-value events.
-  - KV-IR streams μSlope's structural model: schema-tree updates and per-event references into the evolving tree accompany encoded values.
+  - KV-IR makes CLP's semi-structured storage model, described in the μSlope paper, streamable: schema-tree updates and per-event references into the evolving tree accompany encoded values.
   - Schema-tree updates precede the events that reference them, keeping the tree fully materialized for every readable stream prefix.
   - Unlike the Part II design, CLP compression now runs in the host-local collector rather than the log appender.
   - If a producer container exits, the collector can still compress and publish logs already emitted by that container.
@@ -162,6 +162,8 @@ Repeat only enough Merged Schema Tree, Encoded Record Table, log-template (CLP l
 > Common SQL and distributed execution can coexist with specialized semi-structured storage and native execution.
 
 ## Evidence Needed
+
+Treat the remaining word budget as headroom, not a target. Use it only for required production evidence or an explanation readers cannot reasonably infer; otherwise prefer the shorter version. Do not trim the future section merely to preserve the current draft length.
 
 - Weekly active users and measurement window.
 - Daily query volume and aggregation method.
