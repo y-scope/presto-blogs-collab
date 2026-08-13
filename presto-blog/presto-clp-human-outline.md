@@ -35,7 +35,7 @@
 ## 2. CLP: Native Columnar Semi-Structured Storage
 
 - **Goal:** Explain CLP's structure-aware columnization and text encoding.
-- **Why:** The August 2025 YScope blog owns the full storage and optimizer walkthrough.
+- **Why:** The August 2025 YScope blog owns the original storage overview and Presto walkthrough; the μSlope paper provides the formal ERT, MST, and logtype model.
 - **Takeaway:** CLP columnizes document structure and decomposes recurring text into templates and typed values.
 - **Important points:**
   - **Physical analogy:** Variant begins with row-local values and selected shredded columns. A CLP archive contains many shape-specific columnar subtables.
@@ -54,23 +54,25 @@
   - **Exact path:** Use a shredded Parquet column or resolve matching CLP ERT columns.
   - **Multiple types:** Parquet retains non-declared types in `value`; CLP routes each type to homogeneous columns.
   - **Cross-field typed value search:** Current CLP behavior. The MST selects compatible typed columns without an exact field name.
-  - **Wildcard key/path matching:** Distinct future connector work. The MST can identify candidate paths before event scans.
+  - **Wildcard key/path matching:** Broader support exists in deployment and is being prepared for open-source release. The MST identifies candidate paths before event scans.
+  - **Recurring-text search:** Parquet Variant scans relevant string values unless another index applies. CLP uses logtype and variable dictionaries to reject nonmatching patterns before seeking to relevant ERT streams.
 
 ## 4. Beyond File Pruning: Leveraging Metastore and CLP Metadata
 
-- **Goal:** Separate cross-file metadata from metadata inside an archive.
-- **Why:** Each layer eliminates different work.
-- **Takeaway:** Two metadata layers do more than prune splits.
+- **Goal:** Explain three stages that narrow a query before and during each split.
+- **Why:** Ordinary pruning, Uber's latest-`N` planning, and CLP archive metadata eliminate different work.
+- **Takeaway:** Metadata can remove nonmatching files, avoid older files that cannot change the result, and narrow the scan inside each selected archive.
 - **Important points:**
   - **General planning:** Time bounds, dimensions, and statistics. Uber applies it across billions of file records.
   - **Pruning:** Removes an individual file only when it cannot match. Independent of ordering and limits.
   - **Conventional Top-N:** Limits output, not scan scope. It cannot tell Hive-style split discovery when enough data has been found.
   - **Top-N file skipping:** Stops enumerating older files once they cannot change the latest `N`, even if they contain matches.
-  - Uses exact matching-event counts and a timestamp watermark. Every overlapping file remains included.
+  - At Uber, candidate files arrive newest-first. Exact counts for metadata-resolvable filters determine when `N` is covered; the minimum event-time bound becomes a watermark, and every overlapping file remains included.
+  - Ordered candidates let Uber stop consuming older metadata as well as stop creating splits.
   - Row-level filters that prevent an exact count keep all files remaining after normal pruning.
   - Accurate time bounds and counts are required. Time ordering and append-only publication make the optimization more effective but are not sufficient by themselves.
   - Keep the correctness explanation self-contained because Uber's Part III article will publish later.
-  - **Archive metadata:** The MST and log-template/value dictionaries in the header support streaming without local staging.
+  - **Archive metadata:** Compact metadata near the beginning of the archive includes the MST and log-template/value dictionaries, supporting streaming without local staging.
   - **Production evidence:** Tens of petabytes of raw logs per month with substantial headroom, billions of file records, a roughly 30× raw-to-compressed ratio on enriched logs, and a handful of workers. Treat these as deployment observations, not a format benchmark. Early termination is an Uber extension.
 
 ## 5. Deploying and Querying with the CLP Connector
@@ -82,8 +84,9 @@
   - Example query: typed paths, cross-field typed value search, and whole-event reconstruction.
   - Future SQL surface: native Variant operators can replace CLP accessor syntax without changing CLP storage or its physical scan.
   - Optional convenience schema: common CLP paths appear as ordinary typed columns without rewriting archives.
-  - Setup: ingest with CLP, install matched artifacts, enable the loader, and configure `clp.properties`.
-  - Current boundary: MySQL-backed default provider and read-only access through the `default` schema.
+  - Setup: ingest with CLP, install matched artifacts, enable connector-provided serialization codecs on the coordinator, set `plugin.dir` on workers, and install matching `clp.properties` files.
+  - Metadata boundary: the documented path uses MySQL, while provider interfaces let deployments connect their own metastore and planning logic without coupling native scans to that backend.
+  - Current boundary: read-only access through the `default` schema.
   - Compose examples: matched-artifact installation and complete deployment topology.
 
 ## 6. Building Pluggable Presto Native Connectors: Lessons from CLP
@@ -96,22 +99,23 @@
   - **Boundary:** Earlier integration lived in Velox and forked Presto/Prestissimo. The current library loads through the Presto Native worker-plugin interface.
   - **Java:** Catalogs, metadata, splits, rewriting, and handle codecs.
   - **Native:** Load the `.so`, deserialize handles, scan CLP, and return columnar batches.
-  - **Presto hooks:** PR #27653 for dynamic factories. PR #27652 for native deserialization.
+  - **Architectural result:** Java provides a stable Presto interface while the native plugin preserves each split's CLP-specific structure and scan path.
+  - **Presto hooks:** PR #27653 plus `plugin.dir` and `registerExtensions` load the native factory. Coordinator codecs serialize handles; PR #27652 routes them to native deserialization.
   - Frame the reusable guidance as three lessons from CLP: define the Java/native contract, package one compatible release unit, and test the deployed boundary.
   - **Packaging:** Ship the JAR, `.so`, dependencies, RPATH, and serialized protocol together. Match libc, architecture, Presto/Velox, CPU flags, and Folly mode.
-  - Test Java planning with query runners. Use a real worker for runtime-resolved native code.
+  - Test Java conversion, rewriting, metadata, split listing, and codecs with unit tests. Use a real worker for runtime-resolved native code.
 
 ## 7. Conclusion: Choosing Semi-Structured Storage for Presto
 
 - **Goal:** Convert the comparison into a workload decision.
 - **Why:** Readers need conditions, not a universal winner.
-- **Takeaway:** Choose storage for the workload; Presto's pluggable connector preserves CLP's native execution behind common SQL.
+- **Takeaway:** Choose storage for the workload. A common SQL interface does not require a common physical layout.
 - **Important points:**
   - **Choose Variant:** Cross-engine portability with predictable paths for shredding.
   - **Choose CLP:** Uncontrolled schemas, recurring structure/text, and cross-field or free-text search.
   - Stable schemas or nearly unique shapes reduce CLP's advantage.
   - Once PrestoDB supports Variant end to end, CLP accessors can switch to standard Variant operators; Parquet and CLP will still perform different physical scans.
-  - The connector demonstrates common planning with storage-specific native execution.
+  - Presto can own planning and distributed execution while a pluggable native connector preserves storage-specific metadata, encodings, and scan paths.
 
 ## Acknowledgments
 
