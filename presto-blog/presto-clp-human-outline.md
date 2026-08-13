@@ -121,6 +121,7 @@
 
 ## Acknowledgments
 
-- **YScope:** Jack Luo, Kirk Rodrigues, Rui Wang, Xiaochong Wei, and Chenxing Yang. Connector implementation.
+- **YScope:** Jack Luo, Kirk Rodrigues, Rui Wang, Xiaochong Wei, and Chenxing Yang. Worked together to implement the connector.
 - **IBM/Presto:** Pratik Joseph Dabre, Matt Graham, Deepak Majeti, and Tim Meehan. Infrastructure and review.
-- **Uber:** Karthik Bhat, Qingqin Hou, Curt Hu, Maksym Ivanchenko, Jianjian Xie, and Yun Zhang. Production extensions and application with YScope.
+- **Uber Observability:** Karthik Bhat, Qingqin Hou, Maksym Ivanchenko, and Yun Zhang. Production extensions and application with YScope.
+- **Uber Presto:** Curt Hu and Jianjian Xie. Presto integration. Jianjian also supported connector deployment and ongoing maintenance at Uber.

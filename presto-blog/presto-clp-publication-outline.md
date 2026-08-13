@@ -140,7 +140,7 @@ Keep the publication check in this outline rather than the reader-facing draft. 
 
 ### Acknowledgments
 
-Credit Jack Luo, Kirk Rodrigues, Rui Wang, Xiaochong Wei, and Chenxing Yang for leading the connector implementation at YScope. Credit Pratik Joseph Dabre, Matt Graham, Deepak Majeti, and Tim Meehan for IBM/Presto infrastructure and review. Credit Karthik Bhat, Qingqin Hou, Curt Hu, Maksym Ivanchenko, Jianjian Xie, and Yun Zhang at Uber, together with YScope engineers, for extending and applying the architecture in production.
+Credit Jack Luo, Kirk Rodrigues, Rui Wang, Xiaochong Wei, and Chenxing Yang for working together to implement the connector at YScope. Credit Pratik Joseph Dabre, Matt Graham, Deepak Majeti, and Tim Meehan for IBM/Presto infrastructure and review. At Uber, credit Observability engineers Karthik Bhat, Qingqin Hou, Maksym Ivanchenko, and Yun Zhang for working with YScope engineers to extend and apply the architecture in production. Credit Presto engineers Curt Hu and Jianjian Xie for supporting the Presto integration, and credit Jianjian for also supporting connector deployment and ongoing maintenance at Uber.
 
 ---
 
