@@ -153,7 +153,7 @@ We are refining and evaluating these interfaces. Operating on CLP's compact stru
 
 At Uber, Observability integrated the connector with the metastore and query layer. The metastore manages billions of file records, and the query layer handles routing, reliability, and operational controls. YScope worked with Uber's Presto team on internal infrastructure and Observability on planning, including Top-N file skipping.
 
-YScope led Presto Native's CLP connector, with design input from IBM's, Meta's, and Uber's Presto teams. YScope and IBM's team also worked with the community on Presto Native's first end-to-end pluggable connector path, simplifying deployment and maintenance by keeping connectors independent of its source tree.
+YScope led development of the CLP connector for Presto Native, with design input from the Presto teams at Uber, IBM, and Meta. In parallel, YScope, IBM's Presto team, and the broader PrestoDB community closed the final infrastructure gap, making the CLP connector the first end-to-end pluggable connector for Presto Native. Keeping native connectors independent of the Presto Native source tree shortens development and release cycles while simplifying deployment and maintenance.
 
 ## Conclusion
 
