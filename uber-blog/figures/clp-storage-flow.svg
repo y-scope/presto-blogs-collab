@@ -21,6 +21,8 @@
     </style>
   </defs>
 
+  <rect x="0" y="0" width="1590" height="615" fill="#ffffff"/>
+
   <rect class="node legend-swatch" x="650" y="48" width="22" height="22"/>
   <text class="legend-label" x="682" y="67">Observability team services</text>
 
