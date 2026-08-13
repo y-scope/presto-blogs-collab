@@ -18,7 +18,7 @@ Because these versions coexist, the logging platform cannot simply migrate from 
 >
 > Here, *semantic* means queryable structure, relationships, and recurring patterns, not complete natural-language understanding. CLP preserves nested paths, value types, fields that occur together, and text patterns while making logs smaller.
 >
-> For example, consider two events with string fields `service`, `host`, and `event.message`. Their message values are `Failed to load /lib/a.so: undefined symbol foo` and `Failed to load /lib/b.so: undefined symbol bar`. CLP preserves their shared record shape and field types. It stores the shared pattern `Failed to load %library_path%: undefined symbol %symbol%` once while keeping the path and typed variables searchable.
+> For example, consider two events with string fields `service`, `host`, and `event.message`. Their message values are `Failed to load /lib/a.so: undefined symbol foo` and `Failed to load /lib/b.so: undefined symbol bar`. CLP preserves their shared record shape and field types. It stores the recurring text once while keeping the path and typed variable values searchable. For readability, the inferred variables are shown with illustrative, descriptive labels: `Failed to load `**<u>`%library_path%`</u>**`: undefined symbol `**<u>`%symbol%`</u>**.
 
 ## Compressed and Queryable from Arrival through Archival
 
@@ -42,7 +42,7 @@ Until source KV-IR files are purged, both forms may contain the same events. To 
 
 ## Native Semi-Structured Querying with Presto
 
-Adding SQL syntax alone would be straightforward. The harder requirement is to avoid implementing it as row-by-row JSON extraction. Presto Native is PrestoDB's C++ worker implementation, built on Meta's [Velox](https://velox-lib.io/) execution engine. The connector converts typed field requests and supported filters into native CLP operations. Inside each worker, CLP evaluates those requests directly against compressed data and reconstructs only the requested results.
+Adding SQL syntax alone would be straightforward. The harder requirement is to avoid implementing it as row-by-row JSON extraction. Here, **native** applies at two levels. At the SQL interface, field access does not first materialize complete events as JSON. During execution, the connector converts typed field requests and supported filters into CLP operations, which CLP evaluates directly against compressed data inside each Presto Native worker. Presto Native is PrestoDB's C++ worker implementation, built on Meta's [Velox](https://velox-lib.io/) execution engine.
 
 At query time, engineers do not need to know whether an event is stored in KV-IR or an archive. They use either Lucene-style field-and-keyword searches or SQL directly. We normalize and validate both inputs before sending SQL to Presto, where existing access controls and tooling apply.
 
@@ -66,7 +66,7 @@ LIMIT 100;
 
 With or without the optional schema, the [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) provides the [typed functions](https://docs.yscope.com/presto/connector/clp.html) shown above for exact paths, wildcard path segments, and value searches across all fields. Presto requires these functions to declare a value type during planning. CLP itself can infer a type from a filter during execution, so this restriction comes from Presto's current SQL type system rather than CLP's storage or search.
 
-Common paths can look like ordinary columns, while evolving paths can use typed functions. In both cases, CLP accesses the encoded fields directly instead of first materializing and decoding every complete event as JSON.
+Common paths can look like ordinary columns, while evolving paths can use typed functions. Both use the same CLP-native execution path.
 
 **How this relates to lakehouse Variant.** At the table and file layers, [Iceberg v3 Variant](https://iceberg.apache.org/spec/#semi-structured-types) and [Parquet Variant](https://parquet.apache.org/docs/file-format/types/variantencoding/) provide a standardized, interoperable representation for semi-structured values. Parquet keeps each complete Variant value, while optional [shredding](https://parquet.apache.org/docs/file-format/types/variantshredding/) materializes selected paths as typed columns.
 
@@ -129,6 +129,8 @@ CLP already preserves paths, types, and deduplicated log format patterns in comp
 - `SCHEMA(<path>)` would show the paths and types stored beneath a location.
 - `SEMANTIC(<path>, <description>)` could find relevant patterns and values by meaning before retrieving raw events.
 - `PATTERN(<path>)` would expose recurring log formats already deduplicated by CLP.
+
+CLP keeps each pattern linked to its field, typed values, and source events. That linkage would let `PATTERN()` group and count filtered matches directly over the original, losslessly compressed data, without first reconstructing every event or maintaining a separate pattern store.
 
 > ### From guessed keywords to three recurring failure patterns
 >
