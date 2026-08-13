@@ -49,6 +49,7 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
 - **Why:** The logging platform cannot require every application and deployed version to coordinate one complete table schema.
 - **Important points:**
   - Name representative onboarded workloads in the opening: Ray and Michelangelo for machine learning and AI, Flink and Kafka for streaming, and Spark as a data platform. Link each project or platform to its official site or introduction.
+  - Establish the production contrast immediately: five Presto Native workers serve hundreds of users each week and thousands of queries per day over workloads producing 25 PB per month, while CPU, memory, network, and I/O utilization remain low.
   - Use message and nested-JSON examples before defining semi-structured and polymorphic data.
   - Follow with the storage tradeoff: a global schema requires coordinated migrations, while an opaque JSON string forces every query to rediscover structure.
   - Refer to the second article in the series for appender and enrichment mechanics.
