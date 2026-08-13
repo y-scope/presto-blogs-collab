@@ -1,10 +1,8 @@
 # Bringing Native SQL to Petabyte-Scale Semi-Structured Logs: Inside Uber’s CLP and Presto Infrastructure (Part III)
 
-**Document status:** Working publication draft
+At Uber, the [Compressed Log Processor (CLP) platform](https://github.com/y-scope/clp) now handles logs from machine learning and AI platforms such as [Ray](https://www.ray.io/) and [Michelangelo](https://www.uber.com/us/en/blog/michelangelo-machine-learning-platform/), streaming platforms such as [Flink](https://flink.apache.org/) and [Kafka](https://kafka.apache.org/), and data platforms such as [Spark](https://spark.apache.org/). Together, these workloads produce 25 PB of raw semi-structured logs each month—and that volume is growing. Yet five 48-core [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) workers—Presto's C++ worker implementation—serve hundreds of users each week and thousands of queries per day while reading compressed data directly from object storage without a cache. They use 5–10% of CPU and memory, with low network and I/O utilization. How can such a small query cluster provide SQL access at that scale?
 
-At Uber, the [Compressed Log Processor (CLP) platform](https://github.com/y-scope/clp) now handles logs from machine learning and AI platforms such as [Ray](https://www.ray.io/) and [Michelangelo](https://www.uber.com/us/en/blog/michelangelo-machine-learning-platform/), streaming platforms such as [Flink](https://flink.apache.org/) and [Kafka](https://kafka.apache.org/), and the [Spark](https://spark.apache.org/) data platform. Together, these workloads produce approximately 25 PB of raw semi-structured logs each month. Yet five 48-core [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) workers—Presto's C++ worker implementation—serve hundreds of users each week and thousands of queries per day while reading compressed data directly from object storage without a cache. They use 5–10% of CPU and memory, with low network and I/O utilization. How can such a small query cluster provide SQL access at that scale?
-
-This is the third blog in Uber's CLP series. In [“Reducing Logging Cost by Two Orders of Magnitude Using CLP”](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/), we showed the compression and write-path savings for Spark logs and pointed toward familiar SQL through Presto. In [“Modernizing Logging at Uber with CLP (Part II)”](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/), we described production ingestion, retention, and viewing. As adoption grew, SQL access naturally became the next step: engineers needed to select evolving fields, count recurring patterns, and analyze events across files and time ranges for on-call diagnosis, experimentation, and broader analytics. Here, we follow the system end to end: newly arriving semi-structured data is compressed into a searchable stream, asynchronously consolidated into a columnar format, and queried through Presto.
+This is the third blog in Uber's CLP series. In [“Reducing Logging Cost by Two Orders of Magnitude Using CLP”](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/), we showed the compression and write-path savings for Spark logs and pointed toward familiar SQL through Presto. In [“Modernizing Logging at Uber with CLP (Part II)”](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/), we described production ingestion, retention, and viewing. As adoption grew, SQL access naturally became the next step: engineers needed to select evolving fields, count recurring patterns, and analyze events across files and time ranges for on-call diagnosis, experimentation, and broader analytics. Here, we follow data end to end: CLP compresses arriving semi-structured data into an appendable stream searchable as it grows, asynchronously consolidates it into an immutable columnar format, and exposes both through Presto.
 
 Compression alone does not explain how five workers provide SQL access at this scale. The system keeps arriving data compressed and queryable, executes supported SQL operations directly in CLP, and uses metadata and encoded structure to limit what each query schedules, reads, and reconstructs.
 
@@ -82,9 +80,9 @@ When a planned query exceeds configured thresholds for file count, event count, 
 
 ## Production Results
 
-Across workloads now using CLP, approximately 25 PB of raw logs each month is reduced to 750–850 TB, about 97% less storage.[^compression-comparison]
+Across workloads now using CLP, roughly 25 PB of raw logs each month is reduced to 750–850 TB, about 97% less storage.[^compression-comparison]
 
-The five-node cluster, with one 48-core Presto Native worker per node, serves hundreds of users each week and thousands of queries per day directly from object storage. Average response time is approximately two seconds, and 99% of queries finish within 26 seconds.
+The five-node cluster, with one 48-core Presto Native worker per node, serves hundreds of users each week and thousands of queries per day directly from object storage. Average response time is roughly two seconds, and 99% of queries finish within 26 seconds.
 
 The workers typically use 5–10% of CPU and memory, with low network and I/O utilization. We apply conservative rate limits to object-storage reads to control parallelism and preserve bandwidth for other workloads. Even under these limits, queries meet our latency needs, leaving headroom as demand or scope grows.
 
@@ -151,11 +149,11 @@ We are refining and evaluating these interfaces. Operating on CLP's compact stru
 
 ## Open Source and Collaboration
 
-[CLP](https://github.com/y-scope/clp) is an open-source storage and search system for semi-structured data. The open-source [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) exposes KV-IR and archives through one Presto interface. It supports typed access to exact and wildcard paths, typed value search across fields, complete-event reconstruction, and filter and projection pushdown into CLP.
+[CLP](https://github.com/y-scope/clp) provides open-source semi-structured storage and search. The open-source [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) exposes KV-IR and archives through Presto. It supports typed exact and wildcard paths, typed value search across fields, complete-event reconstruction, and filter and projection pushdown into CLP.
 
-At Uber, our Observability team integrated the connector with our internal metastore and existing query layer. The metastore manages billions of file records, while the query layer handles routing, reliability, and operational controls. YScope and Uber Observability engineers jointly developed the production-specific planning, including Top-N file skipping.
+At Uber, Observability integrated the connector with the metastore and query layer. The metastore manages billions of file records, and the query layer handles routing, reliability, and operational controls. YScope worked with Uber's Presto team on internal infrastructure and Observability on planning, including Top-N file skipping.
 
-YScope engineers led the Presto Native CLP connector implementation, working with IBM's and Uber's Presto teams and the broader Presto community on native connector infrastructure and review, and with Meta's Presto team on design discussions.
+YScope led Presto Native's CLP connector, with design input from IBM's, Meta's, and Uber's Presto teams. YScope and IBM's team also worked with the community on Presto Native's first end-to-end pluggable connector path, simplifying deployment and maintenance by keeping connectors independent of its source tree.
 
 ## Conclusion
 

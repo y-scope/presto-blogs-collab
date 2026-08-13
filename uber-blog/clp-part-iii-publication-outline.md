@@ -17,7 +17,7 @@ Make the series payoff explicit in the introduction: Part I established compress
 
 1. **Native SQL for evolving semi-structured logs.** The Presto CLP connector exposes polymorphic paths through typed SQL while preserving CLP's native storage and execution. It is neither a conversion into one fixed physical table nor a syntax-only SQL adapter that materializes every event first.
 2. **Compressed and queryable throughout ingestion.** Appendable KV-IR snapshots make arriving data searchable after their metadata reaches the metastore, typically within 30 seconds to a few minutes. Asynchronous consolidation later creates columnar CLP archives. Queries span both forms without duplicate events, and the onboarded workloads achieve roughly 30× aggregate compression, or about 97% less storage.
-3. **A small query cluster through layered work reduction.** Metastore pruning, latest-N file skipping, and CLP's archive-local metadata prevent most irrelevant files, encoded streams, and events from being examined. This—not a claim that each query scans petabytes—explains how five Presto Native workers serve hundreds of weekly users and thousands of daily queries with approximately two-second average and 26-second p99 response times.
+3. **A small query cluster through layered work reduction.** Metastore pruning, latest-N file skipping, and CLP's archive-local metadata prevent most irrelevant files, encoded streams, and events from being examined. This—not a claim that each query scans petabytes—explains how five Presto Native workers serve hundreds of weekly users and thousands of daily queries with roughly two-second average and 26-second p99 response times.
 
 ### Forward-Looking Payoff
 
@@ -48,8 +48,8 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
 - **Goal:** Establish why schema evolution is continuous rather than an occasional migration.
 - **Why:** The logging platform cannot require every application and deployed version to coordinate one complete table schema.
 - **Important points:**
-  - Name representative onboarded workloads in the opening: Ray and Michelangelo for machine learning and AI, Flink and Kafka for streaming, and Spark as a data platform. Link each project or platform to its official site or introduction.
-  - Establish the production contrast immediately: five Presto Native workers serve hundreds of users each week and thousands of queries per day over workloads producing 25 PB per month, while CPU, memory, network, and I/O utilization remain low.
+  - Name representative onboarded workloads in the opening: Ray and Michelangelo for machine learning and AI, Flink and Kafka for streaming, and Spark for data platforms. Link each project or platform to its official site or introduction.
+  - Establish the production contrast immediately: five Presto Native workers serve hundreds of users each week and thousands of queries per day over workloads producing 25 PB per month, with volume still growing, while CPU, memory, network, and I/O utilization remain low.
   - Use message and nested-JSON examples before defining semi-structured and polymorphic data.
   - Follow with the storage tradeoff: a global schema requires coordinated migrations, while an opaque JSON string forces every query to rediscover structure.
   - Refer to the second article in the series for appender and enrichment mechanics.
@@ -139,7 +139,7 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
   - Approximately 25 PB/month raw and 750–850 terabytes (TB) per month compressed.
   - Put the 169× comparison in a footnote rather than the main narrative. Explain that the first article measured Spark messages alone, while today's broader, enriched workload mix averages roughly 30× compression, still about 97% less storage. High-cardinality trace IDs (UUIDs) offer little repetition for compression. Convert the Markdown footnote to the publisher's native footnote component if necessary.
   - A five-node cluster of 48-core Presto Native workers serves the CLP SQL workload.
-  - Current production scale: hundreds of users per week and thousands of queries per day, with approximately two-second average response time and 99% of queries finishing within 26 seconds.
+  - Current production scale: hundreds of users per week and thousands of queries per day, with roughly two-second average response time and 99% of queries finishing within 26 seconds.
   - Under the current workload, workers typically use 5–10% of their central processing unit (CPU) and memory capacity. Network and input/output (I/O) utilization also remain low.
   - Uber applies conservative rate limits to object-storage reads to control parallelism and preserve bandwidth for other workloads. Even under these limits, queries meet the required latency, leaving room to serve more queries or onboard more workloads.
   - State the scoped maintenance result without repeating the component inventory: a few engineers maintain the entire system as part of their broader roles rather than as their primary responsibility.
@@ -168,9 +168,10 @@ Introduce Merged Schema Tree, Encoded Record Table, and logtype once through pla
 ## 7. Open Source, Collaboration, and Conclusion
 
 - List current open-source capabilities, Uber production extensions, and further-development areas once.
-- Frame the Presto Native CLP connector implementation as YScope-led work with IBM's and Uber's Presto teams and the broader Presto community on native connector infrastructure and review, and with Meta's Presto team on design discussions.
+- Credit YScope for leading implementation of the Presto Native CLP connector and IBM's, Meta's, and Uber's Presto teams for design input on that connector.
+- Separately credit YScope, IBM's Presto team, and the broader community for Presto Native's first end-to-end pluggable connector path. Connect that architecture to simpler deployment and maintenance because connectors remain independent of the Presto Native source tree.
 - Credit Uber's Observability team for integrating the connector with Uber's internal metastore and existing query layer.
-- Credit YScope and Uber Observability engineers for jointly developing the production-specific planning, including Top-N file skipping.
+- Credit YScope and Uber's Presto team for internal connector infrastructure, and YScope and Uber Observability for production planning, including Top-N file skipping.
 - Keep the conclusion compact. Explicitly frame this article as the third blog documenting nearly five years of collaborative work to build the CLP platform at Uber for compression, storage, and query, then recap the series in three short steps: the first blog made longer retention affordable, the second kept compressed logs fresh and easy to browse, and this blog adds native SQL across KV-IR and archives. Summarize layered work reduction, efficient CLP execution, distinct Presto and CLP responsibilities, and production headroom. End by connecting today's gentle query guidance to a foundation for agent-driven root-cause analysis, behavior analytics, and exploratory debugging. Do not repeat the Top-N mechanics.
 - End on the memorable thesis that, at petabyte scale, the most effective optimization is often work the system never schedules or reads. Connect structure preserved from ingestion through execution to today's efficiency and tomorrow's agent workflows.
 
