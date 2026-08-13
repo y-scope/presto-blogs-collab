@@ -130,13 +130,13 @@ CLP already preserves paths, types, and deduplicated log format patterns in comp
 - `SEMANTIC(<path>, <description>)` could find relevant patterns and values by meaning before retrieving raw events.
 - `PATTERN(<path>)` would expose recurring log formats already deduplicated by CLP.
 
-CLP keeps each pattern linked to its field, typed values, and source events. That linkage would let `PATTERN()` group and count filtered matches directly over the original, losslessly compressed data, without first reconstructing every event or maintaining a separate pattern store.
+Each interface could be useful on its own. For unfamiliar data, one useful combination would let an agent inspect where text is stored, search for a concept without knowing its exact wording, and group the matches by recurring format. Because CLP keeps each pattern linked to its field, typed values, and source events, this grouping could run directly over the original, losslessly compressed data without reconstructing every event or maintaining a separate pattern store. The following example shows that combination.
 
 > ### From guessed keywords to three recurring failure patterns
 >
-> An agent reviewing coding-agent session logs asks: **“Which native connector load failures recur?”**
+> Suppose an agent reviewing coding-agent session logs asks: **“Which native connector load failures recur?”**
 >
-> Coding-agent sessions can contain polymorphic, nested message content. In this example, `SCHEMA('message')` identifies `message.content[*].content` as a string-valued path. The query below applies `SEMANTIC()` to that path and groups the matches with `PATTERN()`. It illustrates the interface under development:
+> Coding-agent sessions can contain polymorphic, nested message content. `SCHEMA('message')` first reveals that `message.content[*].content` is a string-valued path. The query then uses `SEMANTIC()` to find load failures expressed in different words and `PATTERN()` to group equivalent failures. The SQL below illustrates the interface under development:
 >
 > ```sql
 > SELECT
@@ -160,7 +160,7 @@ CLP keeps each pattern linked to its field, typed values, and source events. Tha
 >
 > **In this example:** The agent sees three recurring failure patterns instead of 72 raw events and retrieves individual examples only when needed.
 
-Once the patterns are known, ordinary SQL could further break them down by branch, application version, service, or another useful dimension. We are refining and evaluating these interfaces for both Uber's workloads and broader CLP use cases. They build on CLP's existing storage and search foundation, using its compact structure to narrow searches and supply useful context before reconstructing individual events at petabyte scale.
+The result gives the agent a compact map of the recurring failures. Ordinary SQL could then break them down by branch, application version, service, or another useful dimension. We are refining and evaluating these interfaces for both Uber's workloads and broader CLP use cases. They build on CLP's existing storage and search foundation, using its compact structure to narrow searches and supply useful context before reconstructing individual events at petabyte scale.
 
 ## Open Source and Collaboration
 
