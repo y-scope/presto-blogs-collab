@@ -19,8 +19,8 @@
   - Fields, types, nesting, and text evolve without coordinated table migrations.
   - Uber serves tens of petabytes of raw logs per month through CLP, with substantial headroom in the current deployment.
   - Introduce [CLP](https://github.com/y-scope/clp), [YScope](https://yscope.com), and the [OSDI '24 μSlope paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui).
-  - YScope's [August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) owns the original walkthrough. That integration ran natively in a Presto fork, not as a plugin.
-  - Today CLP uses a pluggable Presto Native connector. Variant is introduced only as a brief reference and is not yet supported end to end in PrestoDB.
+  - YScope's [August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) owns the original walkthrough. That integration ran natively but lived in the Presto Native and Velox source trees, requiring a temporary fork rather than loading as a plugin.
+  - Today CLP uses a pluggable Presto Native connector. Variant is introduced only as a brief reference and, as of Q3 2026, is not yet supported end to end in PrestoDB.
 
 ## 1. Variant in the lakehouse landscape
 
@@ -64,6 +64,7 @@
 - **Takeaway:** Metadata can remove nonmatching files, avoid older files that cannot change the result, and narrow the scan inside each selected archive.
 - **Important points:**
   - **General planning:** Time bounds, dimensions, and statistics. Uber applies it across billions of file records.
+  - **Split-provider boundary:** The native connector can scan KV-IR and archives when the provider supplies both. The documented MySQL provider currently supplies archive splits; Uber's metastore plans across both forms.
   - **Pruning:** Removes an individual file only when it cannot match. Independent of ordering and limits.
   - **Conventional Top-N:** Limits output, not scan scope. It cannot tell Hive-style split discovery when enough data has been found.
   - **Top-N file skipping:** Stops enumerating older files once they cannot change the latest `N`, even if they contain matches.
@@ -82,12 +83,13 @@
 - **Takeaway:** Ordinary Presto SQL drives a storage-native scan.
 - **Important points:**
   - Example query: typed paths, cross-field typed value search, and whole-event reconstruction.
+  - Clarify that `CLP_WILDCARD_*_COLUMN()` performs cross-field typed value search, not the broader arbitrary wildcard key/path matching that is still being prepared for open-source release.
   - Future SQL surface: native Variant operators can replace CLP accessor syntax without changing CLP storage or its physical scan.
   - Optional convenience schema: common CLP paths appear as ordinary typed columns without rewriting archives.
-  - Setup: ingest with CLP, install matched artifacts, enable connector-provided serialization codecs on the coordinator, set `plugin.dir` on workers, and install matching `clp.properties` files.
-  - Metadata boundary: the documented path uses MySQL, while provider interfaces let deployments connect their own metastore and planning logic without coupling native scans to that backend.
+  - Setup: ingest with CLP, install version-matched artifacts, enable connector-provided serialization codecs on the coordinator, set `plugin.dir` on workers, and install matching `clp.properties` files.
+  - Metadata boundary: the documented path uses MySQL. Other deployments can implement and wire the provider interfaces for their metastore without changing native scans.
   - Current boundary: read-only access through the `default` schema.
-  - Compose examples: matched-artifact installation and complete deployment topology.
+  - Compose examples: matched-artifact installation and complete deployment topology, both linked from canonical YScope repositories.
 
 ## 6. Building Pluggable Presto Native Connectors: Lessons from CLP
 
@@ -96,14 +98,14 @@
 - **Takeaway:** Native execution moved out of the fork, not out of the worker.
 - **Important points:**
   - YScope engineers collaborated with the Presto community to build one of the first end-to-end, out-of-band connector plugins for Presto Native.
-  - **Boundary:** Earlier integration lived in Velox and forked Presto/Prestissimo. The current library loads through the Presto Native worker-plugin interface.
+  - **Boundary:** Earlier integration lived directly in the Presto Native and Velox source trees, requiring a fork while those changes remained outside upstream. The current library loads through the Presto Native worker-plugin interface.
   - **Java:** Catalogs, metadata, splits, rewriting, and handle codecs.
   - **Native:** Load the `.so`, deserialize handles, scan CLP, and return columnar batches.
   - **Architectural result:** Java provides a stable Presto interface while the native plugin preserves each split's CLP-specific structure and scan path.
   - **Presto hooks:** PR #27653 plus `plugin.dir` and `registerExtensions` load the native factory. Coordinator codecs serialize handles; PR #27652 routes them to native deserialization.
   - Frame the reusable guidance as three lessons from CLP: define the Java/native contract, package one compatible release unit, and test the deployed boundary.
   - **Packaging:** Ship the JAR, `.so`, dependencies, RPATH, and serialized protocol together. Match libc, architecture, Presto/Velox, CPU flags, and Folly mode.
-  - Test Java conversion, rewriting, metadata, split listing, and codecs with unit tests. Use a real worker for runtime-resolved native code.
+  - Test predicate conversion, rewriting, metadata, split listing, and codecs with Java unit tests. Use a real worker for native code whose Presto or Velox symbols are supplied at load time.
 
 ## 7. Conclusion: Choosing Semi-Structured Storage for Presto
 
