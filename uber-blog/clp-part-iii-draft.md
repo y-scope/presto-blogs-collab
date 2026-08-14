@@ -2,9 +2,9 @@
 
 At Uber, the [CLP platform](https://github.com/y-scope/clp) now handles semi-structured logs from machine learning and AI platforms such as [Ray](https://www.ray.io/) and [Michelangelo](https://www.uber.com/us/en/blog/michelangelo-machine-learning-platform/), streaming platforms such as [Flink](https://flink.apache.org/) and [Kafka](https://kafka.apache.org/), and data analytics platforms such as [Spark](https://spark.apache.org/). Together, these workloads produce about 25 PB of logs per month before compression. Yet just five 48-core [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) workers serve hundreds of users each week and execute thousands of successful queries each day. How can such a small cluster make interactive SQL practical at that scale?
 
-This is the third blog in Uber's CLP series. [“Reducing Logging Cost by Two Orders of Magnitude Using CLP”](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/) showed how streaming CLP compression reduced Spark-log storage and SSD writes, and identified familiar SQL access through Presto as a next step. [“Modernizing Logging at Uber with CLP (Part II)”](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/) described production ingestion, retention, and viewing. Broader adoption created demand for projecting evolving fields, aggregating recurring patterns, analyzing events across files and time ranges for diagnosis, and perhaps joining semi-structured logs with related datasets. Uber's mature query ecosystem around Presto, with established governance, access control, and tooling, was the natural place to provide these capabilities.
+This is the third blog in Uber's CLP series. [“Reducing Logging Cost by Two Orders of Magnitude Using CLP”](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/) showed how streaming CLP compression reduced Spark-log storage and SSD writes, and identified familiar SQL access through Presto as a next step. [“Modernizing Logging at Uber with CLP (Part II)”](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/) described production ingestion, retention, and viewing. Broader adoption increased both what engineers wanted to do with the data and how much data each analysis could span. A question that once involved a few log files could now cover many hosts, application versions, and time ranges. Whether diagnosing an incident, evaluating an experiment, or exploring system behavior, engineers often begin with a symptom or question rather than an exact field or message. They need to find relevant events, inspect fields even as those fields evolve, group and count recurring patterns, and compare behavior across the selected data. They may also need to join logs with related datasets. Uber's mature query ecosystem around Presto, with established governance, access control, and tooling, was the natural place to provide these capabilities.
 
-Supporting those analytical needs at this scale and efficiency required more than exposing CLP through SQL. We had to make semi-structured data feel natural to query while handling evolving structures and conflicting field types, keeping new events searchable, and improving storage efficiency over time. Simple time-range pruning also could not eliminate enough work, so we built multiple layers that reduce the data considered before and during CLP scans. This article begins with how CLP organizes evolving logs for columnar compression and search, then follows the data from arrival through consolidation and query execution to show how the pieces fit together.
+Supporting those analytical needs at this scale and efficiency required more than exposing CLP through SQL. We had to make semi-structured data feel natural to query while handling evolving structures and conflicting field types, keeping new events searchable, and improving storage efficiency over time. Simple time-range pruning also could not eliminate enough work, so we built multiple layers that reduce the data considered before and during CLP scans. This article follows that design from storage through query execution, then shows how the same CLP metadata could support future evidence-based agent analysis.
 
 ## Organizing Evolving Logs for Columnar Compression and Search
 
@@ -116,21 +116,19 @@ With the production path in place, we are excited to build on the same metadata 
 
 ### Beyond Guesswork: CLP Context for Agents
 
-Over a longer production period, AI agents using a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/docs/getting-started/intro) server issued more than half of successful CLP queries for root cause analysis, behavior analytics, and exploratory debugging. SQL lets an agent execute a precise query once it knows what to ask, but unfamiliar logs may hide both their structure and wording. Today, an agent may combine guesses such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`. Narrow terms can miss relevant events, while broad terms can bury them in irrelevant results.
+In production, AI agents have issued more than half of successful CLP queries for root cause analysis, behavior analytics, and exploratory debugging. SQL lets an agent run a precise query once it knows what to ask. But these queries reveal a recurring behavior: when agents encounter unfamiliar logs, they may not know the relevant fields or exact search terms, so they combine guesses such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`. Narrow terms can miss relevant events, while broad terms can bury them in irrelevant results.
 
-CLP already preserves paths, types, and deduplicated log format patterns. A **field path** identifies a location inside a nested event. For example, `message.content[*].content` selects the `content` field from every element of the `message.content` array. We are refining three independent interfaces that would expose this context directly:
+**The core idea is simple: use metadata already stored with CLP-compressed data to show agents which fields, types, and recurring message formats exist, while keeping every result linked to exact evidence.** No separate event-level index is required. CLP stores this information in schema trees and deduplicated logtypes. A **field path** identifies a location inside a nested event. For example, `message.content[*].content` selects the `content` field from every element of the `message.content` array. We are refining three interfaces that would expose this context directly:
 
-- `SCHEMA()` would show observed paths and types beneath a field path.
-- `PATTERN()` would emit stored log formats for a field path so SQL can group and count them.
-- `SEMANTIC()` could search a field path for messages matching a plain-language description.
-
-The structure and patterns returned by the first two interfaces could give an agent compact context for a follow-up query. The workflow below uses `SCHEMA()` first, then combines `SEMANTIC()` and `PATTERN()` in SQL.
+- `SCHEMA()` would show the fields and types found below a chosen path.
+- `PATTERN()` would return the stored logtype for a chosen text field so SQL could group and count recurring formats.
+- `SEMANTIC()` would match a plain-language description against those logtypes, either at query time or using one embedding generated for each logtype.
 
 > ### Example: From keyword guesses to recurring failure patterns
 >
 > Suppose an agent reviewing coding-agent session logs asks: **“Which native connector load failures recur?”**
 >
-> `SCHEMA('message')` returns the schema tree below `message`, including each observed nested path and its value type. Combining this result with its domain knowledge, the agent identifies `message.content[*].content` as the string field most relevant to the question. `SEMANTIC()` then finds load failures expressed in different words, and `PATTERN()` groups them by their stored log formats:
+> `SCHEMA('message')` shows which fields exist below `message` and their types. The agent identifies `message.content[*].content` as the text field to search. `SEMANTIC()` finds connector load failures without requiring exact keywords, and `PATTERN()` groups them by recurring message format:
 >
 > ```sql
 > SELECT
@@ -152,9 +150,9 @@ The structure and patterns returned by the first two interfaces could give an ag
 > | Connector factory **`%factory_name%`** was not registered | 19 |
 > | Could not open shared object file **`%file_path%`** | 6 |
 >
-> The agent sees three recurring failure patterns instead of 72 raw events and retrieves individual examples only when needed.
+> The agent sees three recurring failure patterns instead of 72 raw events and can choose which exact evidence to inspect.
 
-Because CLP keeps each pattern connected to its field, typed values, and source events, these operations could run directly over the original, losslessly compressed data without reconstructing every event or maintaining a separate pattern store. The resulting context could guide more precise follow-up queries by branch, application version, service, or another useful dimension. We are refining and evaluating these interfaces for Uber and broader CLP workloads.
+When a query spans multiple files, CLP can combine their schema trees and remove duplicate logtypes. All three interfaces work over this compact metadata instead of raw events. Because the metadata remains linked to matching events and typed variables, an agent can move from a short overview to exact evidence without reconstructing every event. This makes evidence-based agent analysis practical at petabyte scale. We are refining these interfaces for Uber and broader CLP workloads.
 
 ## Open Source and Collaboration
 
