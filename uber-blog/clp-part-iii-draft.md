@@ -72,7 +72,7 @@ LIMIT 100;
 
 The [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) provides these [typed functions](https://docs.yscope.com/presto/connector/clp.html) for exact paths, wildcard path segments, and value searches across fields. Their names declare a return type because Presto needs it during planning. CLP can infer a field's type from a filter at execution time, but the connector does not yet expose that capability. Queries over undeclared paths must therefore choose a typed function. Optional columns and typed functions use the same CLP-native execution path.
 
-At the time of writing, PrestoDB does not yet support the `VARIANT` type end to end. Because a `VARIANT` value can hold different runtime types, future support could provide a more natural interface for dynamic paths while retaining the same CLP-native execution. The preceding **[PrestoDB CLP blog](PRESTO_BLOG_URL)** compares the storage models, while [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) explains the optimizer rewrite that the current connector still uses.
+At the time of writing, PrestoDB does not yet support the `VARIANT` type end to end. Because a `VARIANT` value can hold different runtime types, future support could provide a more natural interface for dynamic paths while retaining the same CLP-native execution. Until then, users can access these capabilities through the `CLP_*` UDFs exposed by the connector. The preceding **[PrestoDB CLP blog](PRESTO_BLOG_URL)** compares the storage models, while [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) explains the optimizer rewrite that the current connector still uses.
 
 ## How Five Workers Serve the Workload: Avoiding Work at Every Layer
 
@@ -106,8 +106,6 @@ Each month, approximately 25 PB of logical uncompressed log data from the worklo
 
 During the same 30-day measurement window, five nodes, each running one 48-core Presto Native worker, served hundreds of users per week and thousands of successful queries per day. Workers streamed selected data directly from object storage without relying on a cache. Among successful queries, mean response time was roughly two seconds and the 99th-percentile (p99) response time was 26 seconds.
 
-AI agents are already major users of the service. They issue more than half of CLP queries for root cause analysis, behavior analytics, and exploratory debugging.
-
 The query service prioritizes interactive latency, resource efficiency, operational simplicity, and low impact on shared object storage over maximum scan throughput. Conservative read-rate limits control parallelism and preserve bandwidth. Under this operating model and the current query mix, workers have typically used 5–10% of their CPU and memory over a longer production period, with network and I/O also well below capacity. This leaves headroom for growing demand and future work. Operational overhead remains low: a few engineers maintain the system alongside their broader platform responsibilities.
 
 ## What Comes Next
@@ -122,7 +120,7 @@ With the production path in place, we are excited to build on the same metadata 
 
 ### Beyond Guesswork: CLP Context for Agents
 
-The next challenge is helping agents decide what to ask. SQL works well once the relevant paths and types are known. With a fixed-schema table, the available columns and types are known in advance. Evolving semi-structured logs have no equivalent stable list because the fields and types present depend on which events the query selects.
+AI agents already issue more than half of CLP queries for root cause analysis, behavior analytics, and exploratory debugging. That production usage exposes the next challenge: helping agents decide what to ask. SQL works well once the relevant paths and types are known. With a fixed-schema table, the available columns and types are known in advance. Evolving semi-structured logs have no equivalent stable list because the fields and types present depend on which events the query selects.
 
 Independent application changes and concurrently running versions make this harder: the same information may appear under different paths or with different types across those events. An agent that guesses the wrong path or type can miss relevant evidence before keyword matching even begins. Natural-language messages add another challenge because the same problem may be described in different words. Without better context, agents often combine broad guesses such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`. These searches may still miss relevant events or bury them in irrelevant results.
 
