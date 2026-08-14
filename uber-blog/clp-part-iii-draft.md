@@ -116,19 +116,19 @@ With the production path in place, we are excited to build on the same metadata 
 
 ### Beyond Guesswork: CLP Context for Agents
 
-In production, AI agents have issued more than half of successful CLP queries for root cause analysis, behavior analytics, and exploratory debugging. SQL lets an agent run a precise query once it knows what to ask. But these queries reveal a recurring behavior: when agents encounter unfamiliar logs, they may not know the relevant fields or exact search terms, so they combine guesses such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`. Narrow terms can miss relevant events, while broad terms can bury them in irrelevant results.
+In production, more than half of successful CLP queries come from AI agents conducting root cause analysis, behavior analytics, and exploratory debugging. SQL can execute a precise query once an agent knows what to ask. With a fixed-schema table, the schema already lists the available columns and types. For evolving semi-structured data such as these logs, no equivalent stable list exists. As applications and versions evolve, a field may appear, disappear, move to another path, or change type across events and files. An agent that guesses one path or type can miss relevant evidence before keyword matching even begins. Natural-language messages add another unknown because the same problem may be described in different words. Agents therefore combine broad guesses such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`, which may still miss relevant events or bury them in irrelevant results.
 
-**The core idea is simple: use metadata already stored with CLP-compressed data to show agents which fields, types, and recurring message formats exist, while keeping every result linked to exact evidence.** No separate event-level index is required. CLP stores this information in schema trees and deduplicated logtypes. A **field path** identifies a location inside a nested event. For example, `message.content[*].content` selects the `content` field from every element of the `message.content` array. We are refining three interfaces that would expose this context directly:
+**Exposing CLP's stored metadata would replace this guesswork with a compact view of the selected data: available fields, value types, and recurring message formats. Agents could decide what to search, use semantic matching without exact keywords, and retrieve only supporting events.** Retrieving less data preserves their limited context window for reasoning and grounds the results in exact evidence. CLP already stores fields and types in schema trees and recurring formats as deduplicated logtypes, so no separate event-level index is required. A **field path** identifies a location inside a nested event. For example, `message.content[*].content` selects the `content` field from every element of the `message.content` array. We are refining three interfaces to expose this context:
 
-- `SCHEMA()` would show the fields and types found below a chosen path.
+- `SCHEMA()` would list the fields and types found below a chosen path.
 - `PATTERN()` would return the stored logtype for a chosen text field so SQL could group and count recurring formats.
-- `SEMANTIC()` would match a plain-language description against those logtypes, either at query time or using one embedding generated for each logtype.
+- `SEMANTIC()` would match a plain-language description against those logtypes, either at query time or using an embedding generated once for each logtype.
 
 > ### Example: From keyword guesses to recurring failure patterns
 >
 > Suppose an agent reviewing coding-agent session logs asks: **“Which native connector load failures recur?”**
 >
-> `SCHEMA('message')` shows which fields exist below `message` and their types. The agent identifies `message.content[*].content` as the text field to search. `SEMANTIC()` finds connector load failures without requiring exact keywords, and `PATTERN()` groups them by recurring message format:
+> `SCHEMA('message')` shows which fields exist below `message` and their types. The agent identifies `message.content[*].content` as the text field to search. `SEMANTIC()` finds messages about connector load failures without requiring exact keywords. `PATTERN()` exposes their recurring formats for SQL to group and count:
 >
 > ```sql
 > SELECT
@@ -152,7 +152,7 @@ In production, AI agents have issued more than half of successful CLP queries fo
 >
 > The agent sees three recurring failure patterns instead of 72 raw events and can choose which exact evidence to inspect.
 
-When a query spans multiple files, CLP can combine their schema trees and remove duplicate logtypes. All three interfaces work over this compact metadata instead of raw events. Because the metadata remains linked to matching events and typed variables, an agent can move from a short overview to exact evidence without reconstructing every event. This makes evidence-based agent analysis practical at petabyte scale. We are refining these interfaces for Uber and broader CLP workloads.
+When a query spans multiple files, CLP can combine their schema trees and remove duplicate logtypes. All three interfaces would work over this compact metadata instead of raw events. Because the metadata remains linked to matching events and typed variables, an agent can move from a compact overview to exact evidence without reconstructing every event. This makes evidence-based agent analysis practical even when the underlying data spans petabytes. We are refining these interfaces for Uber and broader CLP workloads.
 
 ## Open Source and Collaboration
 
