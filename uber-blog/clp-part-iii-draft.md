@@ -46,35 +46,31 @@ Until source KV-IR files are purged, both forms may contain the same events. To 
 
 ## Native Semi-Structured Querying with Presto
 
-Adding SQL syntax alone would be straightforward. The harder requirement is to avoid implementing it as row-by-row JSON extraction. Here, **native** means that field access preserves CLP's storage model instead of extracting values from reconstructed JSON, and that scans execute through CLP inside Presto Native workers. Presto Native is PrestoDB's C++ worker implementation, built on Meta's [Velox](https://velox-lib.io/) execution engine.
+Adding SQL syntax alone would be straightforward. The harder requirement is native field access without reconstructing complete documents row by row. Here, **native** means preserving CLP's storage model: the Java coordinator plans each query and asks the connector's metadata layer for splits, while the dynamically loaded connector inside each Presto Native worker converts typed field requests and supported filters into CLP operations over compressed data. Presto Native is PrestoDB's C++ worker implementation, built on Meta's [Velox](https://velox-lib.io/) execution engine.
 
-The Java coordinator plans the query and asks the connector's metadata layer for splits. Each Presto Native worker then uses the dynamically loaded CLP connector to execute its assigned scan, converting typed field requests and supported filters into CLP operations evaluated directly against compressed data.
+Engineers do not need to know whether an event is stored in KV-IR or an archive. They submit either Lucene-style field-and-keyword searches or SQL directly. We normalize and validate both inputs before sending SQL to Presto, where existing access controls and tooling apply.
 
-At query time, engineers do not need to know whether an event is stored in KV-IR or an archive. They use either Lucene-style field-and-keyword searches or SQL directly. We normalize and validate both inputs before sending SQL to Presto, where existing access controls and tooling apply.
+Presto must know the type of every SQL expression during planning, while a CLP path may be absent or hold different types across events. An optional Presto table schema can expose common path-and-type pairs, such as `timestamp` and `event.request_id`, as ordinary columns without rewriting CLP data. Any path can also be accessed through typed functions.
 
-Presto must know the type of every SQL expression while planning a query. A path in CLP, however, may be absent or hold different types across events. To bridge that mismatch, an optional Presto table schema can expose common path-and-type pairs, such as `timestamp` and `event.request_id`, as ordinary typed columns without rewriting CLP data.
-
-For example, this query returns the latest 100 events where an integer status code found at `event.*.status_code` is at least 500 and any string field begins with `OutOfMemory`. Its projections also show two ways to read a known request ID:
+The following query shows both access forms, wildcard path and value searches, and complete-event reconstruction:
 
 ```sql
 SELECT
-    timestamp, -- direct access through the optional table schema
-    event.request_id, -- direct access through the optional table schema
-    CLP_GET_STRING('event.request_id'), -- same field through an exact-path function
-    CLP_GET_JSON_STRING() AS event -- complete event without declaring its schema
+    timestamp, -- optional-schema column
+    event.request_id, -- optional-schema string column
+    CLP_GET_STRING('event.request_id'), -- same path through a typed function
+    CLP_GET_JSON_STRING() AS event -- complete event without a declared schema
 FROM clp.platform_logs
 WHERE timestamp >= current_timestamp - INTERVAL '30' DAY
-  AND CLP_GET_BIGINT('event.*.status_code') >= 500 -- wildcard path, integer value
-  AND CLP_WILDCARD_STRING_COLUMN() LIKE 'OutOfMemory%' -- string value in any field
+  AND CLP_GET_BIGINT('event.*.status_code') >= 500 -- wildcard path with integer values
+  AND CLP_WILDCARD_STRING_COLUMN() LIKE 'OutOfMemory%' -- string in any field
 ORDER BY timestamp DESC
 LIMIT 100;
 ```
 
-With or without the optional schema, the [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) provides the [typed functions](https://docs.yscope.com/presto/connector/clp.html) shown above for exact paths, wildcard path segments, and value searches across all fields. Presto requires these functions to declare a value type during planning. CLP itself can infer a type from a filter during execution, so this restriction comes from Presto's current SQL type system rather than CLP's storage or search.
+The [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) provides these [typed functions](https://docs.yscope.com/presto/connector/clp.html) for exact paths, wildcard path segments, and value searches across fields. Their names declare a return type because Presto needs it during planning. CLP can infer the type from a filter during execution, and exposing that inference through the connector remains on our todo list. Optional columns and typed functions use the same CLP-native execution path.
 
-Common paths can look like ordinary columns, while evolving paths can use typed functions. Both use the same CLP-native execution path.
-
-Variant provides a standardized dynamic type, but as of Q3 2026 PrestoDB does not yet support it end to end. [Iceberg v3 Variant reading is tracked upstream](https://github.com/prestodb/presto/issues/27198). Future Variant operators could give dynamic CLP paths more natural SQL access without replacing CLP's physical storage model. The preceding **[PrestoDB CLP blog](PRESTO_BLOG_URL)** compares the models in detail. [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) explains the optimizer rewriting introduced by the earlier integration and retained by the current connector.
+PrestoDB does not yet support Variant end to end, so the connector currently uses typed functions for dynamic paths. The preceding **[PrestoDB CLP blog](PRESTO_BLOG_URL)** compares the storage models, while [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) explains the optimizer rewriting retained by the current connector.
 
 ## How Five Workers Serve the Workload: Avoiding Work at Every Layer
 
@@ -102,15 +98,11 @@ When a planned query exceeds configured thresholds for file count, event count, 
 
 ## Production Results
 
-Workloads onboarded to Uber's CLP platform include machine learning and AI platforms such as [Ray](https://www.ray.io/) and [Michelangelo](https://www.uber.com/us/en/blog/michelangelo-machine-learning-platform/), streaming platforms such as [Flink](https://flink.apache.org/) and [Kafka](https://kafka.apache.org/), and data platforms such as [Spark](https://spark.apache.org/). Across these workloads, approximately 25 PB of logical uncompressed log data per month occupies 750–850 terabytes (TB) in object storage, a 29–33× reduction in physical storage, or about 97%.[^compression-comparison]
+Across the workloads introduced above, approximately 25 PB of logical uncompressed log data per month occupies 750–850 terabytes (TB) in object storage, a 29–33× reduction in physical storage, or about 97%.[^compression-comparison]
 
 During the same 30-day measurement window, five nodes, each running one 48-core Presto Native worker, served hundreds of users per week and thousands of successful queries per day. Workers streamed selected data directly from object storage without relying on a cache. Among successful queries, mean response time was roughly two seconds and the 99th-percentile (p99) response time was 26 seconds.
 
-CLP's storage model is designed for unusually high compression while remaining directly searchable. The production query service must also balance interactive latency, efficient resource use, operational simplicity, and limited impact on shared object storage. Conservative read-rate limits control parallelism and preserve bandwidth for other workloads rather than maximizing scan throughput at any cost.
-
-Under the current query mix and these limits, workers have typically used 5–10% of their CPU and memory over a longer production period. Network and I/O utilization has likewise remained well below available capacity. This leaves headroom as demand grows and as we expand into the storage and agent-focused work described below.
-
-Operational overhead also remains low: a few engineers maintain the system alongside their broader platform responsibilities.
+The query service prioritizes interactive latency, resource efficiency, operational simplicity, and low impact on shared object storage over maximum scan throughput. Conservative read-rate limits control parallelism and preserve bandwidth. Under this operating model and the current query mix, workers have typically used 5–10% of their CPU and memory over a longer production period, with network and I/O also well below capacity. This leaves headroom for growing demand and future work. Operational overhead remains low: a few engineers maintain the system alongside their broader platform responsibilities.
 
 ## What Comes Next
 
@@ -168,13 +160,11 @@ The result gives the agent a compact map of the recurring failures. Ordinary SQL
 
 ## Open Source and Collaboration
 
-[CLP](https://github.com/y-scope/clp) provides open-source semi-structured storage and search. The open-source [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) exposes KV-IR and archives through Presto and remains agnostic to its metadata provider. It supports typed exact and wildcard paths, typed value search across fields, complete-event reconstruction, and filter and projection pushdown into CLP.
+[CLP](https://github.com/y-scope/clp) and the [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) are open source. The connector exposes KV-IR and archives through Presto, remains agnostic to its metadata provider, and supports typed path access, complete-event reconstruction, and filter and projection pushdown into CLP. The [μSlope paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui), produced by [YScope](https://yscope.com/), the University of Toronto, and Uber, documents the storage foundation.
 
-The [μSlope paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui), produced by [YScope](https://yscope.com/), the University of Toronto, and Uber, documents the storage foundation behind this work. Developers can run the connector's [Docker Compose integration stack](https://github.com/y-scope/clp-plugin-presto-connector/blob/main/integration-tests/docker-compose.yaml) to query sample KV-IR and archive data. The stack shows the metadata-provider and native worker boundaries end to end and provides a starting point for other specialized Presto Native connectors.
+At Uber, the Observability team integrated the connector with its metastore and query layer and operates the production service. YScope worked with Uber's Presto team on connector infrastructure and with Observability on production planning, including latest-N file skipping.
 
-At Uber, the Observability team integrated the connector with the metastore and query layer and operates the resulting production service. The metastore manages billions of file records, and the query layer handles routing, reliability, and operational controls. YScope worked with Uber's Presto team on connector infrastructure and with Observability on production planning, including latest-N file skipping.
-
-YScope led development of the CLP connector for Presto Native, with design input from Presto teams at Uber and IBM, as well as Meta's Presto and Velox teams. In parallel, YScope implemented and submitted the upstream changes for [runtime connector registration](https://github.com/prestodb/presto/pull/27653) and [connector-specific coordinator-to-worker serialization](https://github.com/prestodb/presto/pull/27652), with review from IBM's Presto team. These changes made CLP the first end-to-end pluggable connector for Presto Native. Keeping native connectors independent of the Presto Native source tree shortens development and release cycles while simplifying deployment and maintenance.
+YScope led connector development with design input from the Presto teams at Uber and IBM and from Meta's Presto and Velox teams. YScope also implemented and submitted the upstream changes for [runtime connector registration](https://github.com/prestodb/presto/pull/27653) and [connector-specific coordinator-to-worker serialization](https://github.com/prestodb/presto/pull/27652), reviewed by IBM's Presto team. These changes made CLP the first end-to-end pluggable connector for Presto Native and let native connectors evolve outside the Presto Native source tree.
 
 ## Conclusion
 
