@@ -116,33 +116,31 @@ With the production path in place, we are excited to build on the same metadata 
 
 ### Beyond Guesswork: CLP Context for Agents
 
-Over a longer production period, AI agents using a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/docs/getting-started/intro) server have issued more than half of successful CLP queries. Agents use CLP for root cause analysis, behavior analytics, and exploratory debugging.
+Over a longer production period, AI agents using a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/docs/getting-started/intro) server issued more than half of successful CLP queries for root cause analysis, behavior analytics, and exploratory debugging. SQL lets an agent execute a precise query once it knows what to ask, but unfamiliar logs may hide both their structure and wording. Today, an agent may combine guesses such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`. Narrow terms can miss relevant events, while broad terms can bury them in irrelevant results.
 
-When the logs are unfamiliar, an agent may combine guessed keywords in one condition, such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`. Narrow guesses can miss unfamiliar wording, while broad guesses can return more raw events than the agent can use. A single common term in the `OR` condition can dominate the output with irrelevant events and bury important matches.
+CLP already preserves paths, types, and deduplicated log format patterns. We are refining three independent interfaces that would expose this context directly:
 
-CLP already preserves paths, types, and deduplicated log format patterns in compressed form. We are refining three independent interfaces that would expose this information directly:
+- `SCHEMA(<path>)` would show observed paths and types beneath a location.
+- `PATTERN(<path>)` would emit stored log formats that SQL can group and count.
+- `SEMANTIC(<path>, <description>)` could find relevant messages by meaning when their exact wording is unknown.
 
-- `SCHEMA(<path>)` would show the paths and types stored beneath a location.
-- `SEMANTIC(<path>, <description>)` could find relevant patterns and values by meaning before retrieving raw events.
-- `PATTERN(<path>)` would expose recurring log formats already deduplicated by CLP.
+`SCHEMA()` and `PATTERN()` could preload a compact map of the filtered data before an agent writes its next query. `SEMANTIC()` addresses the complementary case in which the agent knows what it seeks but not the words used in the logs. Each interface could also be used independently.
 
-Each interface could be useful on its own. For unfamiliar data, one useful combination would let an agent inspect where text is stored, search for a concept without knowing its exact wording, and group the matches by recurring format. Because CLP keeps each pattern linked to its field, typed values, and source events, this grouping could run directly over the original, losslessly compressed data without reconstructing every event or maintaining a separate pattern store. The following example shows that combination.
-
-> ### From guessed keywords to three recurring failure patterns
+> ### Example: From keyword guesses to recurring failure patterns
 >
 > Suppose an agent reviewing coding-agent session logs asks: **“Which native connector load failures recur?”**
 >
-> Coding-agent sessions can contain polymorphic, nested message content. `SCHEMA('message')` first reveals that `message.content[*].content` is a string-valued path. The query then uses `SEMANTIC()` to find load failures expressed in different words and `PATTERN()` to group equivalent failures. The SQL below illustrates the interface under development:
+> `SCHEMA('message')` reveals that `message.content[*].content` contains strings. `SEMANTIC()` finds load failures expressed in different words, and `PATTERN()` groups them by their stored log formats:
 >
 > ```sql
 > SELECT
->     PATTERN('message.content[*].content') AS failure_pattern, -- recurring format
+>     PATTERN('message.content[*].content') AS failure_pattern,
 >     COUNT(*) AS occurrences
 > FROM clp.coding_agent_sessions
 > WHERE SEMANTIC(
 >     'message.content[*].content',
 >     'native connector load failure'
-> ) -- match the idea across different wording
+> )
 > GROUP BY PATTERN('message.content[*].content');
 > ```
 >
@@ -154,9 +152,9 @@ Each interface could be useful on its own. For unfamiliar data, one useful combi
 > | Connector factory **`%factory_name%`** was not registered | 19 |
 > | Could not open shared object file **`%file_path%`** | 6 |
 >
-> **In this example:** The agent sees three recurring failure patterns instead of 72 raw events and retrieves individual examples only when needed.
+> The agent sees three recurring failure patterns instead of 72 raw events and retrieves individual examples only when needed.
 
-The result gives the agent a compact map of the recurring failures. Ordinary SQL could then break them down by branch, application version, service, or another useful dimension. We are refining and evaluating these interfaces for both Uber's workloads and broader CLP use cases. They build on CLP's existing storage and search foundation, using its compact structure to narrow searches and supply useful context before reconstructing individual events at petabyte scale.
+Because CLP keeps each pattern connected to its field, typed values, and source events, these operations could run directly over the original, losslessly compressed data without reconstructing every event or maintaining a separate pattern store. The resulting context could guide more precise follow-up queries by branch, application version, service, or another useful dimension. We are refining and evaluating these interfaces for Uber and broader CLP workloads.
 
 ## Open Source and Collaboration
 
