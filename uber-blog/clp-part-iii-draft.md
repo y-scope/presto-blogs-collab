@@ -2,13 +2,15 @@
 
 Uber workloads onboarded to the [Compressed Log Processor (CLP) platform](https://github.com/y-scope/clp) produce about 25 petabytes (PB) of semi-structured log data per month before compression. Thousands of applications and multiple versions run side by side, so fields appear, disappear, move, and change type. Engineers still need fresh, interactive SQL for production diagnosis, exploration, and analytics across files and time ranges.
 
+Presto was a natural integration point. Uber already has a mature query ecosystem built around Presto for audit logs and analytical or experimental datasets, with broad data-source connectivity and platform services for governance, access control, and tooling. The CLP connector brings semi-structured operational logs into teams' existing Presto environments and also enables joins with related datasets where useful.
+
 That combination creates two problems. A fixed table schema would require coordinated migrations across independently deployed applications. Storing each event as one opaque JSON string avoids those migrations but pushes parsing and type discovery into every query. Scale compounds the problem: even a query returning 100 events can be expensive if it schedules every file in its time range and inspects every candidate event.
 
 Uber addresses both problems by capturing structure as events arrive, then reusing it to compress data, make new events searchable, organize archives into columns, execute SQL, and plan queries. Five 48-core [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) workers serve hundreds of users each week and thousands of successful queries each day. The system succeeds not by scanning petabytes quickly, but by avoiding work at every layer. Across the production workload, only a small fraction of the source data is examined.
 
 This is the third blog in Uber's CLP series. The [first blog](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/) established CLP's compression and write-path savings. The [second blog](https://www.uber.com/gb/en/blog/modernizing-logging-with-clp-ii/) showed how Uber ingests compressed logs and makes them available for interactive viewing. Here, we explain how Uber and YScope brought typed SQL to the same platform while preserving CLP-native storage and search, then show how the same structure can support future agent workflows.
 
-## Why Semi-Structured Logs Are Hard to Query at Scale
+## Querying Semi-Structured Logs at Scale
 
 During a rolling deployment, one application version might emit `status_code` as an integer, another as a string, and a third might place it under a different nested object. All three versions may be active at once. Events can also combine natural-language text, typed fields, and nested objects. This data is **semi-structured** because each event has discoverable structure but the dataset does not share one predefined schema. It is **polymorphic** because one path can hold several value types.
 
@@ -42,7 +44,9 @@ Until source KV-IR files are purged, both forms may contain the same events. To 
 
 ## Native Semi-Structured Querying with Presto
 
-Adding SQL syntax alone would be straightforward. The harder requirement is to avoid implementing it as row-by-row JSON extraction. Here, **native** applies at two levels. At the SQL interface, field access does not first materialize complete events as JSON. During execution, the connector converts typed field requests and supported filters into CLP operations, which CLP evaluates directly against compressed data inside each Presto Native worker. Presto Native is PrestoDB's C++ worker implementation, built on Meta's [Velox](https://velox-lib.io/) execution engine.
+Adding SQL syntax alone would be straightforward. The harder requirement is to avoid implementing it as row-by-row JSON extraction. Here, **native** means that field access preserves CLP's storage model instead of extracting values from reconstructed JSON, and that scans execute through CLP inside Presto Native workers. Presto Native is PrestoDB's C++ worker implementation, built on Meta's [Velox](https://velox-lib.io/) execution engine.
+
+The Java coordinator plans the query and asks the connector's metadata layer for splits. Each Presto Native worker then uses the dynamically loaded CLP connector to execute its assigned scan, converting typed field requests and supported filters into CLP operations evaluated directly against compressed data.
 
 At query time, engineers do not need to know whether an event is stored in KV-IR or an archive. They use either Lucene-style field-and-keyword searches or SQL directly. We normalize and validate both inputs before sending SQL to Presto, where existing access controls and tooling apply.
 
@@ -86,6 +90,8 @@ Across a 30-day measurement window on our production cluster, the aggregate even
 
 At Uber, we added a planning step that considers files newest first and can stop selecting files before every older candidate becomes a split. Unlike pruning, a file skipped by this step may still contain matches. Overlapping file time ranges make the stopping rule more complicated than simply counting `N` matches. The callout explains the guaranteed and approximate modes for readers who want the details.
 
+> Guaranteed mode preserves exact latest-N results. Users may explicitly select approximate mode when they prefer lower latency and accept that some qualifying events may be omitted.
+>
 > **Approximate mode.** The metastore receives pruned files in descending `max_timestamp` order and accumulates matching-event counts. When the count first reaches `N`, it sets a watermark at the lowest `min_timestamp` selected so far and returns immediately. This can schedule fewer files and reduce latency, but an omitted file overlapping the watermark may contain events that belong in the true latest `N`.
 >
 > **Guaranteed mode.** With candidate files ordered by accurate bounds for the query's timestamp field, the metastore includes every file whose `max_timestamp` overlaps the watermark and stops at the first file below it. Exact matching-event counts must account for every remaining filter. If any filter lacks an exact count, guaranteed mode returns every file remaining after pruning.
@@ -168,7 +174,7 @@ The result gives the agent a compact map of the recurring failures. Ordinary SQL
 
 The [μSlope paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui), produced by [YScope](https://yscope.com/), the University of Toronto, and Uber, documents the storage foundation behind this work. Developers can run the connector's [Docker Compose integration stack](https://github.com/y-scope/clp-plugin-presto-connector/blob/main/integration-tests/docker-compose.yaml) to query sample KV-IR and archive data. The stack shows the metadata-provider and native worker boundaries end to end and provides a starting point for other specialized Presto Native connectors.
 
-At Uber, the Observability team integrated the connector with the metastore and query layer. The metastore manages billions of file records, and the query layer handles routing, reliability, and operational controls. YScope worked with Uber's Presto team on connector infrastructure and with Observability on production planning, including latest-N file skipping.
+At Uber, the Observability team integrated the connector with the metastore and query layer and operates the resulting production service. The metastore manages billions of file records, and the query layer handles routing, reliability, and operational controls. YScope worked with Uber's Presto team on connector infrastructure and with Observability on production planning, including latest-N file skipping.
 
 YScope led development of the CLP connector for Presto Native, with design input from Presto teams at Uber and IBM, as well as Meta's Presto and Velox teams. In parallel, YScope implemented and submitted the upstream changes for [runtime connector registration](https://github.com/prestodb/presto/pull/27653) and [connector-specific coordinator-to-worker serialization](https://github.com/prestodb/presto/pull/27652), with review from IBM's Presto team. These changes made CLP the first end-to-end pluggable connector for Presto Native. Keeping native connectors independent of the Presto Native source tree shortens development and release cycles while simplifying deployment and maintenance.
 
