@@ -57,19 +57,19 @@ Until source KV-IR files are purged, the two forms overlap. The metastore choose
 
 ## Native Semi-Structured Querying with Presto
 
-Adding SQL syntax alone would be straightforward. The harder requirement is native field access without reconstructing complete documents row by row. Here, **native** means preserving CLP's storage model. Presto's Java coordinator plans each query and asks the connector for splits, the connector-defined units of work assigned to workers. A split identifies one logical file in KV-IR or a set of logical files within an archive. Inside each Presto Native worker, the dynamically loaded connector converts typed field requests and supported filters into CLP operations over compressed data. Presto Native is PrestoDB's C++ worker implementation, built on Meta's [Velox](https://velox-lib.io/) execution engine.
+To engineers, recent KV-IR and consolidated archives look like one Presto table. They query it with SQL and do not need to know where an event is stored. Uber also accepts familiar Lucene-style searches and translates them into the same SQL path, preserving existing access controls and query tools.
 
-Engineers do not need to know whether an event is stored in KV-IR or an archive. They submit either Lucene-style field-and-keyword searches or SQL directly. We translate Lucene-style input into SQL, then validate and submit every query to Presto, where existing access controls and tooling apply.
+Underneath this familiar interface, Presto plans each query. Inside [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) C++ workers, the connector pushes supported field reads and filters into CLP. CLP searches its compressed representation directly instead of reconstructing every event as a document.
 
-Presto must know the type of every SQL expression during planning, while a CLP path may be absent or hold different types across events. An optional Presto table schema can expose common path-and-type pairs, such as `timestamp` and `event.request_id`, as ordinary columns without rewriting CLP data. Paths whose values map to supported SQL types can also be accessed through typed functions. `CLP_GET_JSON_STRING()` reconstructs the complete event when a query needs the full structure.
+Frequently used fields, such as `timestamp` and `event.request_id`, appear as ordinary typed columns. Other supported fields are available through the [open-source connector's](https://github.com/y-scope/clp-plugin-presto-connector) [typed SQL functions named `CLP_*`](https://docs.yscope.com/presto/connector/clp.html). The function name gives Presto a stable return type even when a field is absent or has another type in some events. These functions support exact paths, wildcard path segments, and typed value searches across fields. `CLP_GET_JSON_STRING()` reconstructs the complete event only when requested.
 
-The following query shows both access forms, wildcard path and value searches, and complete-event reconstruction:
+The main access forms fit in one query:
 
 ```sql
 SELECT
-    timestamp, -- optional-schema column
-    event.request_id, -- optional-schema string column
-    CLP_GET_STRING('event.request_id'), -- same path through a typed function
+    timestamp, -- ordinary table column
+    event.request_id, -- ordinary string column
+    CLP_GET_STRING('event.request_id'), -- same stored path through a typed function
     CLP_GET_JSON_STRING() AS event -- complete event without a declared schema
 FROM clp.platform_logs
 WHERE timestamp >= current_timestamp - INTERVAL '30' DAY
@@ -79,9 +79,11 @@ ORDER BY timestamp DESC
 LIMIT 100;
 ```
 
-The [open-source CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) provides these [typed functions](https://docs.yscope.com/presto/connector/clp.html) for exact paths, wildcard path segments, and value searches across fields. Their names declare a return type because Presto needs it during planning. CLP can infer a field's type from a filter at execution time, but the connector does not yet expose that capability. Queries over undeclared paths must therefore choose a typed function. Optional columns and typed functions use the same CLP-native execution path.
+All these access forms use the same CLP-native scan. Exposing a path as an ordinary column does not create another copy of the data. That is the complete user-facing model.
 
-At the time of writing, PrestoDB does not yet support the `VARIANT` type. Because a `VARIANT` value can hold different runtime types, future support could provide the native dynamic paths SQL operator interfaces while retaining the capability to integrate with CLP-native execution. Until then, we provide first-class support for these capabilities through the `CLP_*` UDFs exposed by the connector. The preceding **[PrestoDB blog, “The Pluggable CLP Connector for Presto Native: Specialized Storage for Semi-Structured Data”](PRESTO_BLOG_URL)** compares the Variant vs CLP storage model and provides a first hand reference for the pluggable Presto native connector design, while [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) explains the optimizer rewrite that the connector still uses.
+The connector makes this experience simple by handling substantial complexity behind the interface.
+
+Interested readers can continue with the companion **[PrestoDB blog, “The Pluggable CLP Connector for Presto Native: Specialized Storage for Semi-Structured Data”](PRESTO_BLOG_URL)**. It follows the connector end to end, including Java planning, native plugin loading, filter pushdown, packaging, deployment, and testing. It also explains how today's `CLP_*` interface and CLP's physical model relate to future PrestoDB `VARIANT` support. [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) provides a deeper walkthrough of the optimizer rewrite used by the connector.
 
 ## How Five Workers Serve the Workload: Avoiding Work at Every Layer
 
