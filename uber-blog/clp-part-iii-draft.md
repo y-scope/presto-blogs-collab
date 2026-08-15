@@ -41,11 +41,15 @@ Configurable triggers upload snapshots without closing the local stream. After t
 
 The surprising part is that this fresh-data path does not force archive construction to parse and encode the same events again. KV-IR remains directly searchable as it grows, and consolidation reuses its interpreted and encoded representation.
 
-> ### KV-IR turns a compiler-like intermediate representation into a searchable stream
+> ### KV-IR makes an intermediate representation searchable as it grows
 >
-> A compiler's intermediate representation typically sits between source and optimized output. KV-IR occupies a similar position between incoming events and columnar CLP archives, but it goes further: the representation itself is serialized incrementally as data arrives. CLP has already interpreted each event's nesting, assigned fine-grained value types, and separated natural-language text into logtypes and typed variables. Rather than streaming self-contained documents, KV-IR writes schema-tree references and encoded values, conceptually forming a row ready for a matching internal table.
+> A compiler typically transforms source into an intermediate representation (IR) before producing optimized output. CLP similarly transforms incoming events into a structured, encoded form before building columnar archives. KV-IR makes that intermediate form incremental: it serializes the representation as events arrive and keeps every complete readable prefix searchable.
 >
-> New schema-tree nodes precede the first event that references them. Every readable stream prefix is therefore structurally complete and directly searchable. KV-IR is not temporary internal state. It is compressed, appendable, durable production storage that archive consolidation can consume directly.
+> **The parsing work on any one host is modest, but repeating it centrally across Uber's full log volume would make consolidation far more expensive.** Host log collectors perform that work as events arrive and together form a massively parallel parsing system distributed across Uber's fleet. Each collector interprets event nesting, assigns fine-grained value types, and separates natural-language text into logtypes and typed variables.
+>
+> KV-IR then writes evolving schema-tree references alongside encoded values rather than streaming self-contained documents. Conceptually, each event is already a row ready for its matching internal table. Archive construction can route those values into columns without parsing the original event again.
+>
+> Each new schema-tree node appears before the first event that refers to it, so every complete readable prefix contains all the structure needed to interpret its events. Although *intermediate* describes KV-IR's position in the data flow, KV-IR is compressed and appendable, and its published snapshots are durable, directly searchable production data.
 
 Closed KV-IR files remain queryable while the aggregation service groups them and a worker builds an archive in the background. Because the data is already interpreted and encoded, consolidation merges schema trees, appends values to archive columns, and deduplicates structure, logtypes, and values across files instead of reparsing the originals. This cross-file organization improves compression and enables faster columnar search. Consolidation uses background CPU and I/O but adds no synchronous work to ingestion or queries.
 
