@@ -117,13 +117,13 @@ Across a 30-day production window, the successful queries' time ranges covered *
 
 Some queries request far more data than the user actually needs. Their time range may be unnecessarily wide, or they may omit an available metadata filter. During planning, Uber's query layer detects queries that exceed configured thresholds and suggests these simple refinements. One small edit often brings the query back into the interactive range. This is a guardrail, not a rejection. When the full scope is intentional, users can proceed with the original query. The system executes it efficiently, but genuinely large queries still take time.
 
-## Production Results
+## Results in Production
 
-Each month, approximately 25 PB of logical uncompressed log data from the workloads introduced above is stored as 750–850 terabytes (TB) of CLP compressed data, equivalent to about 97% less physical storage.
+Each month, the workloads described above produce approximately **25 PB** of log data before compression. Their CLP footprint is **750–850 TB**, about **97% less physical storage**.
 
-During the same 30-day measurement window, five nodes, each running one 48-core Presto Native worker, served hundreds of users per week and thousands of successful queries per day. Workers streamed selected data directly from object storage without relying on a cache. Among successful queries, mean response time was roughly two seconds and the 99th-percentile (p99) response time was 26 seconds.
+In the same 30-day production window, **five nodes**, each running one 48-core Presto Native worker, served **hundreds of users per week** and completed **thousands of successful queries per day**. Workers streamed selected data directly from object storage without relying on a cache. Successful queries had a mean response time of roughly **two seconds**, and **99% completed within 26 seconds**.
 
-The query service prioritizes interactive latency, resource efficiency, operational simplicity, and low impact on shared object storage over maximum scan throughput. Conservative read-rate limits control parallelism and preserve bandwidth. Under this operating model and the current query mix, workers have typically used 5–10% of their CPU and memory over a longer production period, with network and I/O also well below capacity. This leaves headroom for growing demand and future work. Operational overhead remains low: a few engineers maintain the system alongside their broader platform responsibilities.
+Uber's CLP query deployment balances interactive query performance with a small footprint on shared infrastructure. Rather than maximize scan throughput, we deliberately throttle our object-storage read rate and parallelism to avoid disrupting other workloads while still meeting users' latency needs. Over a longer production period, workers typically used **5–10% of their CPU and memory**, with network and I/O also lightly loaded. The remaining capacity provides headroom as demand and scope grow. A few engineers maintain the system alongside their broader platform responsibilities.
 
 ## What Comes Next
 
