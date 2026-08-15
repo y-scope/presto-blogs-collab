@@ -129,31 +129,37 @@ Uber's CLP query deployment balances interactive query performance with a small 
 
 With the production path in place, we are excited to build on the same metadata and compressed structure that reduce query work today. Two directions stand out: using that knowledge to organize data more intelligently and exposing it to agents so they can explore unfamiliar data with less guesswork.
 
-### Smarter Data Placement and Consolidation
+### Better Storage Decisions from Existing Metadata
 
-**Intelligent tiering.** Future tiering would balance query latency against storage cost. For suitable workloads, CLP could remain the default queryable tier, while a faster indexed tier could be provisioned for tables or time ranges whose access patterns and latency needs justify it. CLP would retain the longer history and could repopulate the index if demand rises.
+The decision points and metadata already exist, making both directions incremental policy improvements with potentially substantial storage and query-efficiency returns.
 
-**Grouping similar data during consolidation.** The same schema, logtype, source, and query-history metadata could guide how closed KV-IR files are grouped into archives. Grouping similar files can improve deduplication, while grouping files queried together can reduce the number of archives a query opens. Time range, retention, freshness, and archive-size limits would still bound each group.
+**Demand-driven hot indexing.** Because CLP preserves the original events losslessly and remains queryable, it could serve as the default durable tier. Access patterns, latency needs, and retention policy would determine which tables or time ranges also receive a copy in a hot index. If demand returns, CLP could repopulate the index with the exact events, reducing hot storage without sacrificing history.
+
+**Metadata- and domain-guided consolidation.** Schema, logtypes, sources, query history, and platform knowledge could guide which files share an archive. Structural similarity improves deduplication and compression. Keeping data queried together, such as Spark driver and executor logs, reduces archive opens. Time range, retention, freshness, and archive-size limits still bound each group.
 
 ### Beyond Guesswork: CLP Context for Agents
 
-AI agents already issue more than half of the queries on this platform for root cause analysis, behavior analytics and exploratory debugging. That production usage exposes the next challenge: helping agents decide what to ask. SQL works well once the relevant paths and types are known. With a fixed-schema table, the available columns and types are known in advance. Evolving semi-structured logs have no equivalent stable list because the fields and types present depend on which events the query selects.
+AI agents already issue more than half of CLP queries at Uber for root cause analysis, behavior analytics, and exploratory debugging. That production use exposes the next bottleneck: SQL works once a query is precise, but an agent must first discover which paths, types, and message formats occur in the events selected by its filters.
 
-Independent application changes and concurrently running versions make this harder: the same information may appear under different paths or with different types across those events. An agent that guesses the wrong path or type can miss relevant evidence before keyword matching even begins. Natural-language messages add another challenge because the same problem may be described in different words. Without better context, agents often combine broad guesses such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`. These searches may still miss relevant events or bury them in irrelevant results.
+With evolving semi-structured logs, guessing the wrong path or type can exclude relevant evidence before text search begins. Broad keyword guesses such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'` may still miss unfamiliar wording or bury useful evidence in irrelevant results.
 
-**CLP's stored metadata already contains much of this missing context. Before retrieving raw events, an agent could inspect a compact view of the filtered data: which fields occur, their value types, and recurring message formats. With that context, it could decide what to search and find relevant message formats by semantic meaning rather than exact keywords. It could then request only the supporting evidence it needs. For Uber, that could mean fewer trial-and-error queries, more agent context available for reasoning, and faster investigations grounded in supporting data.** Schema trees record fields and types, while deduplicated logtypes record recurring formats. Because CLP stores this metadata with the compressed data, the workflow would not require a separate event-level index. For example, the field path `message.content[*].content` selects the `content` field from every element of the `message.content` array. Today, agents use the production SQL interface described above. We are refining three additional SQL functions as one way to expose these capabilities:
+**The goal is simple: inspect compact context, generate targeted SQL, and retrieve exact evidence.** CLP could show an agent the fields, types, and recurring message formats in the filtered data, then search those formats by meaning. The agent would preserve more of its limited context window for reasoning and ground its final result in exact source events.
 
-- `SCHEMA()` would list the fields and types below a chosen path within the filtered events.
-- `PATTERN()` would expose the stored logtype for a chosen text field, allowing SQL to group and count recurring formats.
-- `SEMANTIC()` would match a plain-language description against stored logtypes, either at query time or through an embedding generated once for each logtype.
+Recall that CLP's schema trees record paths and types, while logtypes capture recurring message formats. Both are stored with the compressed data and remain linked to matching events, so this workflow would not require a separate event-level index. We are refining three SQL functions to expose these capabilities:
+
+- `SCHEMA()` would list the fields and value types below a chosen path in the filtered data.
+- `PATTERN()` would expose stored logtypes so SQL can group and count recurring formats.
+- `SEMANTIC()` would match a plain-language description against stored logtypes, either directly or through an embedding generated once per logtype.
+
+The functions could be used independently or combined.
 
 > ### Example: From keyword guesses to recurring failure patterns
 >
-> The following syntax is illustrative. These functions are under development.
+> The following syntax is illustrative. These functions remain under development.
 >
 > Suppose an agent reviewing coding-agent session logs asks: **“Which native connector load failures recur?”**
 >
-> `SCHEMA('message')` shows which fields and types occur below `message`. The agent combines that schema with its knowledge of the session format and identifies `message.content[*].content` as the relevant text field. `SEMANTIC()` selects logtypes related to connector load failures without guessing their exact wording. `PATTERN()` returns those recurring formats for SQL to group and count:
+> `SCHEMA('message')` identifies `message.content[*].content` as the relevant text field. The agent then asks SQL to group semantically related logtypes:
 >
 > ```sql
 > SELECT
@@ -175,9 +181,9 @@ Independent application changes and concurrently running versions make this hard
 > | Connector factory **`%factory_name%`** was not registered | 19 |
 > | Could not open shared object file **`%file_path%`** | 6 |
 >
-> The agent first sees three recurring failure patterns instead of 72 raw events, then chooses which exact evidence to inspect.
+> Instead of placing 72 near-duplicate events in its context, the agent first sees three recurring formats and their counts, then retrieves the exact events it needs as evidence.
 
-Across selected inputs, CLP can merge schema trees and deduplicate identical logtypes. The agent would perform this discovery over compact metadata instead of reconstructing raw events. Because each metadata entry remains linked to matching events and typed variables, the agent could later ground its final results in the exact events it retrieves. The agent-facing context would grow with the number of distinct structures and message formats which are bound within an application rather than the number of unbounded raw events, making the workflow practical over petabyte-scale data.
+Across selected files, CLP can merge schema trees and deduplicate identical logtypes before presenting this context. The context therefore grows with distinct structures and message formats rather than raw-event count. Every metadata entry remains linked to matching events and typed variables, allowing an agent to move from a compact overview to exact supporting evidence. This is what makes metadata-first agent analysis practical over petabyte-scale data.
 
 ## Open Source and Collaboration
 
