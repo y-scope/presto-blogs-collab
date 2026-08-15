@@ -31,21 +31,25 @@ Archives therefore provide high compression and selective search for consolidate
 
 ## Compressed and Queryable from Arrival through Archival
 
-Incident diagnosis, rollout validation, and active-job monitoring all depend on recent data. Uber therefore keeps two CLP storage forms queryable: an appendable representation for arriving data and archives for consolidated data.
-
-[**Key-value intermediate representation (KV-IR)**](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) **preserves data freshness:** appendable files keep arriving data compressed and searchable without waiting for an archive. **Archives improve long-term storage and search efficiency:** asynchronous consolidation combines closed files for better compression and faster columnar search.
+Recent logs must remain searchable for incident diagnosis, rollout validation, and active-job monitoring. Building an immutable archive for each small batch of container logs would create tiny objects, while waiting for a larger batch would delay search. Uber avoids this tradeoff by writing arriving events to appendable, compressed [**key-value intermediate representation (KV-IR)**](https://docs.yscope.com/clp/main/dev-docs/design-kv-ir-streams/index.html) and asynchronously consolidating closed files into immutable CLP archives.
 
 ![CLP storage flow from application containers through KV-IR to consolidated archives](figures/clp-storage-flow.svg)
 
-**Figure 1: New logs remain compressed and queryable in KV-IR within minutes. Closed files are later consolidated into columnar archives for better compression and faster search, while the metastore lets queries span both forms without duplicates.**
+**Figure 1: KV-IR snapshots keep arriving data compressed and searchable. Closed files are consolidated asynchronously into columnar archives, and queries span both forms without duplicates.**
 
-Host log collectors write arriving events to KV-IR, which carries structure and values in the same compressed stream. A path-and-type definition appears before the first event that uses it, making each uploaded snapshot self-contained and searchable. Configurable triggers upload updated snapshots without closing the local stream. Once the metastore processes the update, new events become queryable, typically within 30 seconds to a few minutes of being emitted.
+Configurable triggers upload snapshots without closing the local stream. After the metastore processes an update, new events are typically queryable within 30 seconds to a few minutes.
 
-After KV-IR files close, they remain queryable while our aggregation service waits until it can form a suitable consolidation group. It assigns that group to a consolidation worker, which builds an archive asynchronously. Queries keep reading the KV-IR inputs until the archive is ready, so consolidation does not delay access to the data. Consolidation consumes background CPU and I/O, but it adds no synchronous stage to ingestion or query execution.
+The surprising part is that this fresh-data path does not force archive construction to parse and encode the same events again. KV-IR remains directly searchable as it grows, and consolidation reuses its interpreted and encoded representation.
 
-Consolidation is efficient because CLP streams encoded KV-IR instead of reconstructing and reparsing the original events. As it reads multiple inputs, CLP merges their schema trees, appends encoded values directly to matching internal columns, and deduplicates recurring logtypes and values across file boundaries. This extends the physical organization described above across a larger body of data, further improving compression and search.
+> ### KV-IR turns a compiler-like intermediate representation into a searchable stream
+>
+> A compiler's intermediate representation typically sits between source and optimized output. KV-IR occupies a similar position between incoming events and columnar CLP archives, but it goes further: the representation itself is serialized incrementally as data arrives. CLP has already interpreted each event's nesting, assigned fine-grained value types, and separated natural-language text into logtypes and typed variables. Rather than streaming self-contained documents, KV-IR writes schema-tree references and encoded values, conceptually forming a row ready for a matching internal table.
+>
+> New schema-tree nodes precede the first event that references them. Every readable stream prefix is therefore structurally complete and directly searchable. KV-IR is not temporary internal state. It is compressed, appendable, durable production storage that archive consolidation can consume directly.
 
-Until source KV-IR files are purged, both forms may contain the same events. To prevent duplicate query results, our metastore selects one representation for each logical log file. If that file appears in both KV-IR and an archive, the archive takes priority. If it appears in multiple archives, the newest archive wins. The connector hides these storage choices behind one logical table.
+Closed KV-IR files remain queryable while the aggregation service groups them and a worker builds an archive in the background. Because the data is already interpreted and encoded, consolidation merges schema trees, appends values to archive columns, and deduplicates structure, logtypes, and values across files instead of reparsing the originals. This cross-file organization improves compression and enables faster columnar search. Consolidation uses background CPU and I/O but adds no synchronous work to ingestion or queries.
+
+Until source KV-IR files are purged, the two forms overlap. The metastore chooses one representation per logical file. An archive takes priority over KV-IR, and the newest archive wins if several contain it. The connector exposes one duplicate-free logical table.
 
 ## Native Semi-Structured Querying with Presto
 
