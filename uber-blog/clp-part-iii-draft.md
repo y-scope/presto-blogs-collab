@@ -61,7 +61,7 @@ To engineers, recent KV-IR and consolidated archives look like one Presto table.
 
 Underneath this familiar interface, Presto plans each query. Inside [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) C++ workers, the connector pushes supported field reads and filters into CLP. CLP searches its compressed representation directly instead of reconstructing every event as a document.
 
-Frequently used fields, such as `timestamp` and `event.request_id`, appear as ordinary typed columns. Other supported fields are available through the [open-source connector's](https://github.com/y-scope/clp-plugin-presto-connector) [typed SQL functions named `CLP_*`](https://docs.yscope.com/presto/connector/clp.html). The function name gives Presto a stable return type even when a field is absent or has another type in some events. These functions support exact paths, wildcard path segments, and typed value searches across fields. `CLP_GET_JSON_STRING()` reconstructs the complete event only when requested.
+Frequently used fields, such as `timestamp` and `event.request_id`, appear as ordinary typed columns. The [open-source connector](https://github.com/y-scope/clp-plugin-presto-connector) exposes other supported fields through [typed SQL functions named `CLP_*`](https://docs.yscope.com/presto/connector/clp.html). The function name gives Presto a stable return type even when a field is absent or has another type in some events. These functions support exact paths, wildcard path segments, and typed value searches across fields. `CLP_GET_JSON_STRING()` reconstructs the complete event only when requested.
 
 The main access forms fit in one query:
 
@@ -79,37 +79,41 @@ ORDER BY timestamp DESC
 LIMIT 100;
 ```
 
-All these access forms use the same CLP-native scan. Exposing a path as an ordinary column does not create another copy of the data. That is the complete user-facing model.
+All these access forms use the same CLP-native execution path. CLP uses its schema tree, internal tables, encoded columns, and dictionaries to narrow the search and reconstruct only what the query requests. Exposing a path as an ordinary column does not create another copy of the data. That is the complete user-facing model.
 
-The connector makes this experience simple by handling substantial complexity behind the interface.
+The connector makes this experience simple by handling substantial complexity behind the interface. That simplicity reflects substantial engineering by YScope, the Presto team, and the broader PrestoDB community in both the connector and Presto Native.
 
-Interested readers can continue with the companion **[PrestoDB blog, “The Pluggable CLP Connector for Presto Native: Specialized Storage for Semi-Structured Data”](PRESTO_BLOG_URL)**. It follows the connector end to end, including Java planning, native plugin loading, filter pushdown, packaging, deployment, and testing. It also explains how today's `CLP_*` interface and CLP's physical model relate to future PrestoDB `VARIANT` support. [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) provides a deeper walkthrough of the optimizer rewrite used by the connector.
+Readers who want the implementation story can continue with the companion **[PrestoDB blog, “The Pluggable CLP Connector for Presto Native: Specialized Storage for Semi-Structured Data”](PRESTO_BLOG_URL)**. Written for connector developers and Presto maintainers, it covers Java planning, native plugin loading, filter pushdown, packaging, deployment, testing, and the relationship between CLP and future PrestoDB `VARIANT` support.
+
+[YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) provides a deeper walkthrough of the optimizer rewrite used by the connector.
 
 ## How Five Workers Serve the Workload: Avoiding Work at Every Layer
 
-Typed SQL explains how engineers use the system. Avoiding work explains why five workers can serve it. A query returning only 100 rows can still be expensive if Presto first schedules every file in a 30-day range and examines every candidate event.
+Typed SQL explains how engineers use the system. Avoiding work explains how five workers can serve it. Returning 100 rows can still be expensive if Presto schedules every file in a 30-day range and examines every event.
 
-In aggregate across a 30-day production window, query time ranges covered more than 200,000 times as many events as the system ultimately examined after all three work-reduction layers.[^work-reduction] The achievement is not scanning petabytes quickly. It is preventing the source volume from becoming the query volume.
+Across a 30-day production window, time-range filtering alone covered more than 200,000 times as much event data as the full three-layer query path ultimately examined.[^work-reduction] The achievement is not scanning petabytes quickly. It is preventing the source volume from becoming the query volume.
 
-**1. Prune files before scheduling.** Our metastore compares query filters with per-file metadata such as event-time bounds, application, host, job, and correlation ID. A file that cannot match is excluded before Presto creates splits, so workers never open it. This query-aware file planning also includes the latest-N optimization below.
+**1. Remove files that cannot match.** Our metastore compares query filters with file-level metadata such as event-time bounds, application, host, job, and correlation ID. If that metadata rules out a match, the file never becomes a Presto split and no worker opens it.
 
-**2. Avoid scheduling older files for latest-N queries.** Most log searches ask for only the latest `N` matches with `ORDER BY timestamp DESC LIMIT N`. If file selection ignores that limit, workers must process every split left after pruning before Presto can identify the latest `N` matches.
+**2. Stop before older files become work.** Most log searches ask only for the latest `N` matches with `ORDER BY timestamp DESC LIMIT N`. After ordinary pruning, Presto would still need to read every scheduled split before identifying the latest `N`. Uber's metastore therefore considers the remaining files newest first and, when conditions allow, stops before older files become splits.
 
-At Uber, we added a planning step that considers files newest first and can stop selecting files before every older candidate becomes a split. Unlike pruning, a file skipped by this step may still contain matches. Overlapping file time ranges make the stopping rule more complicated than simply counting `N` matches. The callout explains the guaranteed and approximate modes for readers who want the details.
+These skipped files differ from pruned files. They may contain matches, but those matches are too old to change the requested result. That distinction is useful and easy to implement incorrectly. The callout explains why reaching `N` is not enough and how guaranteed and approximate modes handle the difference.
 
-> ### How latest-N file selection balances correctness and speed
+> ### Why reaching N is not enough
 >
-> Guaranteed mode preserves exact latest-N results. Users may explicitly select approximate mode when they prefer lower latency and accept that some qualifying events may be omitted.
+> The tempting implementation is to order files by `max_timestamp`, add their matching-event counts until the total reaches `N`, and stop. That can be wrong. An unselected file may overlap the time bounds of selected files and contain events newer than some already counted results.
 >
-> **Approximate mode.** The metastore receives pruned files in descending `max_timestamp` order and accumulates the available per-file event counts for applicable file-level filters. When the count first reaches `N`, it sets a watermark at the lowest `min_timestamp` selected so far and returns immediately. This can schedule fewer files and reduce latency, but an omitted file overlapping the watermark may contain events that belong in the true latest `N`.
+> **Reaching `N` establishes a watermark. It does not by itself justify stopping.**
 >
-> **Guaranteed mode.** With candidate files ordered by accurate bounds for the query's timestamp field, the metastore includes every file whose `max_timestamp` overlaps the watermark and stops at the first file below it. Exact matching-event counts must account for every remaining filter. If any filter lacks an exact count, guaranteed mode returns every file remaining after pruning.
+> **Approximate mode.** Users explicitly choose this mode when lower latency matters more than an exact latest-N result. The metastore receives pruned files in descending `max_timestamp` order and accumulates the available counts for supported filters. When the count first reaches `N`, it sets a watermark at the lowest `min_timestamp` selected so far and returns immediately. This can schedule fewer files, but a file overlapping the watermark may contain events that belong in the true latest `N`.
 >
-> Both modes run before split creation, so skipped files are never scheduled or opened. If the metastore streams ordered candidates, planning can also terminate candidate retrieval early instead of materializing the full file list. The same logic runs in reverse for `ORDER BY timestamp ASC LIMIT N`. It can also account for filters such as application or host when the metastore knows how many matching events each file contains.
+> **Guaranteed mode.** This mode preserves the exact latest-N result. With accurate bounds for the query's timestamp field, the metastore uses the same watermark but includes every file whose `max_timestamp` is at or above it. It stops only when the next file is strictly older than the watermark. Counts must be exact for every remaining filter. If any filter cannot be counted exactly, guaranteed mode returns every file left after ordinary pruning.
+>
+> Both modes run before split creation, so skipped files are never scheduled or opened. The same logic runs in reverse for `ORDER BY timestamp ASC LIMIT N`. If the metastore streams ordered candidates, it can also stop retrieving file metadata early.
 
-**3. Narrow each selected CLP scan.** The connector passes supported filters and requested fields directly to CLP. Within an archive, its schema tree finds only the tables and columns that could contain matches. Logtype and value dictionaries then rule out text patterns and values that cannot match. CLP reads the relevant encoded streams and materializes rows satisfying those filters. Presto evaluates any remaining expressions.
+**3. Narrow each selected CLP scan.** The connector passes supported filters and requested fields directly to CLP. Within each selected file, its schema tree identifies the tables and columns that could contain matches. Logtype and value dictionaries rule out text patterns and values that cannot match. CLP reads the relevant encoded streams, and Presto evaluates any remaining expressions.
 
-When a planned query exceeds configured thresholds for file count, event count, or data volume, our query layer suggests a narrower timestamp range or additional filters. This small nudge can prevent substantial work. Users can still run the original query when they need the complete result.
+Some broad queries still require substantial work. During planning, Uber's query layer automatically suggests a narrower time range or additional metadata filters when a query exceeds configured thresholds. A small edit often reduces the work dramatically. Users can still proceed when they need the complete result.
 
 ## Production Results
 
