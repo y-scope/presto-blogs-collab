@@ -89,13 +89,11 @@ Readers who want the implementation story can continue with the companion **[Pre
 
 ## How Five Workers Serve the Workload: Avoiding Work at Every Layer
 
-Typed SQL explains how engineers use the system. Avoiding work explains how five workers can serve it. Returning 100 rows can still be expensive if Presto schedules every file in a 30-day range and examines every event.
+Typed SQL explains how engineers use the system. Avoiding work explains how five workers can serve it. Returning 100 rows can still be expensive if Presto schedules every file in a 30-day range and examines every event. Three layers prevent that work: prune files that cannot match, skip unnecessary older files, and narrow each selected CLP scan.
 
-Across a 30-day production window, time-range filtering alone covered more than 200,000 times as much event data as the full three-layer query path ultimately examined.[^work-reduction] The achievement is not scanning petabytes quickly. It is preventing the source volume from becoming the query volume.
+**1. Prune files that cannot match.** Our metastore compares query filters with file-level metadata such as event-time bounds, application, host, job, and correlation ID. If that metadata rules out a match, the file never becomes a Presto split and no worker opens it.
 
-**1. Remove files that cannot match.** Our metastore compares query filters with file-level metadata such as event-time bounds, application, host, job, and correlation ID. If that metadata rules out a match, the file never becomes a Presto split and no worker opens it.
-
-**2. Stop before older files become work.** Most log searches ask only for the latest `N` matches with `ORDER BY timestamp DESC LIMIT N`. After ordinary pruning, Presto would still need to read every scheduled split before identifying the latest `N`. Uber's metastore therefore considers the remaining files newest first and, when conditions allow, stops before older files become splits.
+**2. Skip older files that cannot change the result.** Most log searches ask only for the latest `N` matches with `ORDER BY timestamp DESC LIMIT N`. After ordinary pruning, Presto would still need to read every scheduled split before identifying the latest `N`. Uber's metastore therefore considers the remaining files newest first and, when conditions allow, stops before older files become splits.
 
 These skipped files differ from pruned files. They may contain matches, but those matches are too old to change the requested result. That distinction is useful and easy to implement incorrectly. The callout explains why reaching `N` is not enough and how guaranteed and approximate modes handle the difference.
 
@@ -114,6 +112,8 @@ These skipped files differ from pruned files. They may contain matches, but thos
 **3. Narrow each selected CLP scan.** The connector passes supported filters and requested fields directly to CLP. Within each selected file, its schema tree identifies the tables and columns that could contain matches. Logtype and value dictionaries rule out text patterns and values that cannot match. CLP reads the relevant encoded streams, and Presto evaluates any remaining expressions.
 
 Some broad queries still require substantial work. During planning, Uber's query layer automatically suggests a narrower time range or additional metadata filters when a query exceeds configured thresholds. A small edit often reduces the work dramatically. Users can still proceed when they need the complete result.
+
+Together, the three layers prevent source volume from becoming query volume. Across a 30-day production window, time-range filtering alone covered more than 200,000 times as much event data as the full query path ultimately examined.[^work-reduction] The achievement is not scanning petabytes quickly. It is avoiding almost all of that work.
 
 ## Production Results
 
