@@ -59,11 +59,11 @@ Until source KV-IR files are purged, the same events exist in both forms. The me
 
 ## Native Semi-Structured Querying with Presto
 
-To engineers, recent KV-IR and consolidated archives look like one Presto table. They can query that table with SQL without knowing where an event is stored. Uber also accepts familiar Lucene-style searches and translates them into the same SQL path, preserving existing access controls and query tools.
+Engineers see one Presto table and query it with ordinary SQL. Which storage form holds a given event never surfaces. Uber also accepts familiar Lucene-style searches, translating them into the same SQL path so existing access controls and tooling still apply.
 
-Underneath this familiar interface, Presto's Java coordinator plans each query. Inside [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) C++ workers, the connector pushes supported field reads and filters into CLP, which searches its compressed representation directly instead of reconstructing every event as a document.
+Presto has to know the type of every expression before it runs a query. Logs do not cooperate. A field may be missing from most events, and `status_code` may be an integer in one and a string in the next. The connector resolves this in the function name: `CLP_GET_BIGINT('event.status_code')` tells the planner what to expect, and CLP supplies only the values that match when the query runs.
 
-Frequently used fields, such as `timestamp` and `event.request_id`, appear as ordinary typed columns. The [open-source connector](https://github.com/y-scope/clp-plugin-presto-connector) also exposes supported fields through [typed SQL functions named `CLP_*`](https://docs.yscope.com/presto/connector/clp.html). Each function's name gives Presto a stable return type even when a field is absent or has another type in some events. These functions support exact paths, wildcard path segments, and typed value searches across fields. `CLP_GET_JSON_STRING()` reconstructs the complete event only when requested.
+Frequently used fields such as `timestamp` and `event.request_id` skip the ceremony and appear as ordinary typed columns. The [open-source connector](https://github.com/y-scope/clp-plugin-presto-connector) provides the rest through [typed functions named `CLP_*`](https://docs.yscope.com/presto/connector/clp.html), covering exact paths, wildcard path segments, and value searches across fields whose names the query never mentions. `CLP_GET_JSON_STRING()` returns the whole event when nothing narrower will do.
 
 The main access forms fit in one query:
 
@@ -81,7 +81,7 @@ ORDER BY timestamp DESC
 LIMIT 100;
 ```
 
-All these access forms use the same CLP-native execution path. Exposing a path as an ordinary column does not create another stored copy. For implementation details, see the companion **[PrestoDB blog on the pluggable CLP connector](PRESTO_BLOG_URL)** and [YScope's optimizer walkthrough](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82).
+Every one of those forms takes the same path. Inside [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) C++ workers, the connector pushes the field reads and filters it can into CLP, which searches its compressed representation directly rather than rebuilding events as documents and reading them back. Exposing a path as an ordinary column is a naming convenience, not a second copy of the data. For implementation details, see the companion **[PrestoDB blog on the pluggable CLP connector](PRESTO_BLOG_URL)** and [YScope's optimizer walkthrough](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82).
 
 ## How Five Workers Serve the Workload: Avoiding Work at Every Layer
 
@@ -115,9 +115,9 @@ During planning, Uber's query layer automatically flags queries that exceed conf
 
 Stored in CLP, that 25 PB of monthly log data occupies a reported **750–850 TB** in object storage, about **97% less physical storage**.[^compression-comparison]
 
-In the same 30-day production window, **five nodes**, each running one 48-core Presto Native worker, served **hundreds of users per week** and completed **thousands of successful queries per day**. Workers streamed selected data directly from object storage without relying on a cache. Successful queries had a mean response time of roughly **two seconds**, and **99% completed within 26 seconds**.
+In the same 30-day production window, **five nodes**, each running one 48-core Presto Native worker, served **hundreds of users per week** and completed **thousands of successful queries per day**, streaming selected data directly from object storage without a cache. Successful queries had a mean response time of roughly **two seconds**, and **99% completed within 26 seconds**.
 
-Rather than maximizing scan throughput, we deliberately limit our object-storage read rate and parallelism to avoid disrupting other workloads while still meeting users' latency needs. Across a longer observation period, workers typically used **5–10% of their CPU and memory**, with light network and I/O use. The remaining capacity provides headroom as demand and scope grow. A few engineers maintain the system alongside their broader platform responsibilities.
+Across a longer observation period, workers typically used **5–10% of their CPU and memory**, with light network and I/O use. A cluster serving this workload should be busy. It is not, because the layers above it removed the work before it reached a worker. What remains is headroom, and we spend it deliberately: rather than maximizing scan throughput, we limit our object-storage read rate and parallelism to avoid disrupting other workloads while still meeting users' latency needs. A few engineers maintain the system alongside their broader platform responsibilities.
 
 ## What Comes Next
 
