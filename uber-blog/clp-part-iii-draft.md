@@ -133,17 +133,15 @@ With the production path established, the same metadata and compressed structure
 
 ### Beyond Guesswork: CLP Context for Agents
 
-While compressing, CLP extracts the semantics of what it stores: the structure of each event, the recurring formats behind similar log lines, and the variables pulled out of them. This metadata is small, and it grows with the number of distinct structures rather than the number of events, so it stays roughly the same size whether it describes an hour of logs or a month.
+While compressing, CLP extracts the semantics of what it stores: the structure of each event, the recurring formats behind similar log lines, and the variables pulled out of them. None of this is a separate index. It is what the compressed data is made of, so it costs nothing extra to keep and cannot drift out of sync. The metadata is small, and it grows with the number of distinct structures rather than the number of events, so it stays roughly the same size whether it describes an hour of logs or a month.
 
-That makes a class of questions answerable without reading any events at all. Which fields exist in this slice and what types they hold. Which message formats occur, and how often. Queries that do need events start from a far smaller candidate set, because the metadata rules out most of it first.
+That makes a class of questions answerable without reading any events at all. Which fields exist in this slice, not in the table as a whole, and what types they hold. Which message formats occur, and how often. Queries that do need events start from a far smaller candidate set, because the metadata rules out most of it first.
 
 Agents already issue more than half of CLP queries at Uber, for root cause analysis, behavior analytics, and exploratory debugging. They are the ones who need this most. An agent arriving at an unfamiliar table cannot ask what the columns are, because semi-structured logs have no fixed answer, and reading a sample surfaces the common formats while hiding the rare one it is looking for. Metadata gives it the whole picture at a size it can afford to hold in context.
 
 Three SQL functions would expose it: the tree of paths and types in a filtered slice, the recurring formats behind matching events, and a way to select those formats by meaning rather than exact wording. The interface is designed. What it still needs is refinement and validation.
 
 > ### From a vague question to three recurring failure patterns
->
-> The names and syntax below are illustrative. These functions remain under development.
 >
 > An agent reviewing coding-agent session logs asks: **“Which native connector load failures recur?”**
 >
