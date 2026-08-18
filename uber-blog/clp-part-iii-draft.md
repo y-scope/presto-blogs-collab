@@ -145,7 +145,7 @@ Three SQL functions would expose it: the tree of paths and types in a filtered s
 >
 > Session records nest their text several levels deep, so the agent starts with `SCHEMA('message')`, which lists the paths and value types stored below `message`. It finds the text at `message.content[*].content`.
 >
-> It then asks for load failures without knowing their wording, grouping the results by format:
+> It then groups matching events by their recurring format, selecting them by meaning rather than exact wording:
 >
 > ```sql
 > SELECT
@@ -159,7 +159,7 @@ Three SQL functions would expose it: the tree of paths and types in a filtered s
 > GROUP BY PATTERN('message.content[*].content');
 > ```
 >
-> Because CLP stores each recurring format once, `SEMANTIC()` compares the description against the archive's logtype dictionary rather than against every message, and an event qualifies when it carries a matching format. `PATTERN()` returns that format with its changing values replaced by named placeholders, illustrated below rather than stored as shown:
+> `PATTERN()` returns the stored format behind each matching event, with its changing values replaced by named placeholders, illustrated below rather than stored as shown. `SEMANTIC()` does its matching against those same stored formats rather than against every message:
 >
 > | failure pattern | occurrences |
 > | --- | ---: |
