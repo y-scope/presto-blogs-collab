@@ -159,7 +159,7 @@ Three SQL functions would expose it: the tree of paths and types in a filtered s
 > GROUP BY PATTERN('message.content[*].content');
 > ```
 >
-> `PATTERN()` returns the stored format behind each matching event, with its changing values replaced by named placeholders, illustrated below rather than stored as shown. `SEMANTIC()` embeds the description once and compares it against a stored embedding for each distinct format, not one for every message, so its cost tracks the number of formats, not events:
+> `PATTERN()` returns the stored format behind each matching event, with its changing values replaced by named placeholders, illustrated below rather than stored as shown. `SEMANTIC()` embeds the description once and compares it against a computed embedding for each distinct format, not one for every message, so its cost tracks the number of formats, not events:
 >
 > | failure pattern | occurrences |
 > | --- | ---: |
