@@ -16,7 +16,7 @@ Uber stores these logs in CLP, which losslessly preserves each source file's pat
 
 Think of a CLP archive as a collection of small internal tables. Events with the same nested field paths and corresponding value types share a table, where each field becomes a column of encoded values of one type. For natural-language text such as log messages, CLP identifies the static text shared by similar messages and stores it as a recurring format called a **logtype**, encoding the changing parts such as library paths, IDs, and counts separately while preserving their types. An archive-local schema tree maps each observed combination of field path and value type to the tables and columns that store its values.
 
-Because CLP derives each archive's layout from observed data, new fields and type changes are absorbed during compression without a global schema update, and each shared schema is stored once rather than repeated with every event. Values that share a field path and type sit together, which compresses well, and dictionaries avoid repeating logtypes and values. The same organization narrows a search: the schema tree selects only the tables and columns that can hold a matching field of the requested type, dictionaries rule out patterns and values that cannot match, and CLP reconstructs a complete event only when one is requested. The [μSlope paper from OSDI '24](https://www.usenix.org/conference/osdi24/presentation/wang-rui), joint work by YScope, the University of Toronto, and Uber, describes the formal layout.
+Because CLP derives each archive's layout from observed data, new fields and type changes are absorbed during compression without a global schema update, and each shared schema is stored once rather than repeated with every event. Values that share a field path and type sit together, which compresses well, and dictionaries avoid repeating logtypes and values. The same organization narrows a search: the schema tree selects only the tables and columns that can hold a matching field of the requested type, dictionaries rule out patterns and values that cannot match, and CLP reconstructs a complete event only when one is requested. The [μSlope paper from OSDI '24](https://www.usenix.org/conference/osdi24/presentation/wang-rui), joint work by YScope, the University of Toronto, and Uber, describes the formal layout. All of this describes a finished archive. Events that arrived a minute ago are not in one yet.
 
 > ### Four ways to store an evolving event
 >
@@ -39,7 +39,7 @@ Recent logs must remain searchable for incident diagnosis, rollout validation, a
 
 **Figure 1: KV-IR snapshots keep arriving data compressed and searchable. Closed KV-IR files are consolidated asynchronously into columnar archives, and queries span both forms without duplicates.**
 
-Configurable conditions trigger snapshot uploads without closing the local stream. After the metastore processes the corresponding metadata update, new events are typically queryable within 30 seconds to a few minutes.
+Configurable conditions trigger snapshot uploads without closing the local stream. After Uber's metastore processes the corresponding metadata update, new events are typically queryable within 30 seconds to a few minutes.
 
 The surprising part is that this fresh-data path does not force archive construction to parse and encode the same events from scratch. KV-IR remains directly searchable as it grows, while consolidation reuses its structured, encoded representation.
 
@@ -113,7 +113,7 @@ During planning, Uber's query layer automatically flags queries that exceed conf
 
 ## Results in Production
 
-Each month, the workloads described above produce approximately **25 PB** of log data before compression. Stored in CLP, their reported object-storage footprint is **750–850 TB**, about **97% less physical storage**.[^compression-comparison]
+Stored in CLP, that 25 PB of monthly log data occupies a reported **750–850 TB** in object storage, about **97% less physical storage**.[^compression-comparison]
 
 In the same 30-day production window, **five nodes**, each running one 48-core Presto Native worker, served **hundreds of users per week** and completed **thousands of successful queries per day**. Workers streamed selected data directly from object storage without relying on a cache. Successful queries had a mean response time of roughly **two seconds**, and **99% completed within 26 seconds**.
 
@@ -121,13 +121,13 @@ Rather than maximizing scan throughput, we deliberately limit our object-storage
 
 ## What Comes Next
 
-With the production path established, the same metadata and compressed structure can support smarter storage decisions and help agents explore unfamiliar data with less guesswork.
+With the production path established, the same metadata can guide where data lives and answer questions that would otherwise require reading it.
 
 ### Better Storage Decisions from Existing Metadata
 
 **Indexing only what needs it.** A fully indexed tier earns its cost for data queried constantly under tight latency requirements. Much data is not. Because CLP preserves the original events losslessly and stays queryable, it could serve as the default tier, with a faster index provisioned only where access patterns justify it. How often a table is queried, which fields and time ranges those queries touch, and how long it must be retained are all things the metastore already records. If demand rises again, the index could be repopulated from CLP with the exact events, so shrinking it is reversible.
 
-**Metadata- and domain-guided consolidation.** Schema, logtypes, sources, query history, and platform knowledge could guide which files share an archive. Structural similarity could improve deduplication and compression. Keeping data queried together, such as Spark driver and executor logs, could reduce archive opens. Time range, retention, freshness, and archive-size limits would still constrain each group.
+**Grouping files that belong together.** Which files share an archive is currently an operational decision. Schema, logtypes, source, and query history could make it a deliberate one: files with similar structure deduplicate better, and files queried together, such as Spark driver and executor logs, mean fewer archives to open. Time range, retention, freshness, and archive-size limits still bound each group.
 
 ### Beyond Guesswork: CLP Context for Agents
 
@@ -183,7 +183,7 @@ The collaboration also produced reusable changes upstream. Supporting native con
 
 Adding SQL syntax was not the hard part. The challenge was keeping evolving logs fresh, compact, and queryable while preventing most of that petabyte-scale data from becoming query work. Appendable KV-IR keeps arriving events searchable, consolidated CLP archives improve compression and search, the metastore avoids scheduling unnecessary files, and CLP narrows each selected scan.
 
-The broader lesson is that a common SQL interface does not require one physical storage model. Presto brings CLP data into Uber’s established query ecosystem and handles planning and distributed execution, while CLP preserves evolving structure and searches its compressed representation directly. That preserved structure is also the path forward: the metadata that avoids query work today can guide storage decisions and give agents compact context about unfamiliar data before they retrieve events.
+The broader lesson is that a common SQL interface does not require one physical storage model. Presto brings CLP data into Uber’s established query ecosystem and handles planning and distributed execution, while CLP preserves evolving structure and searches its compressed representation directly. That preserved structure is also the path forward: the metadata that avoids query work today can decide where data lives and answer questions without reading the events behind it.
 
 [^compression-comparison]: The first blog reported 169× compression for Spark messages alone. The current aggregate figure covers a broader set of workloads whose records include operational fields such as hostnames, tags, and high-cardinality trace IDs (UUIDs). High-cardinality trace IDs are nearly unique and give the compressor little repetition to exploit. Even so, a reported object-storage footprint of 750–850 TB for 25 PB of source data corresponds to roughly 97% less storage.
 
