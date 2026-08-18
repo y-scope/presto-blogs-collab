@@ -29,7 +29,7 @@ Because CLP derives each archive's layout from observed data, new fields and typ
 > | Document plus selected typed columns | Which paths deserve their own columns | Direct scans for chosen paths, navigation for the rest | None |
 > | CLP | Nothing | Only relevant encoded columns and values are scanned | Recurring text stored once, variables typed and separated |
 >
-> The cost is that CLP is specialized storage with its own query integration, which is what the rest of this article is about.
+> The cost is that CLP is specialized storage with its own query integration, which is what the rest of this article is about.[^hybrid-layouts]
 
 ## Compressed and Queryable from Arrival through Archival
 
@@ -81,7 +81,7 @@ ORDER BY timestamp DESC
 LIMIT 100;
 ```
 
-Every one of those forms takes the same path. Inside [Presto Native](https://prestodb.io/docs/current/presto-cpp.html) C++ workers, the connector pushes the field reads and filters it can into CLP, which searches its compressed representation directly rather than rebuilding events as documents and reading them back. Exposing a path as an ordinary column is a naming convenience, not a second copy of the data. For implementation details, see the companion **[PrestoDB blog on the pluggable CLP connector](PRESTO_BLOG_URL)** and [YScope's optimizer walkthrough](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82).
+Every one of those forms takes the same path. Inside Presto Native C++ workers, the connector pushes the field reads and filters it can into CLP, which searches its compressed representation directly rather than rebuilding events as documents and reading them back. Exposing a path as an ordinary column is a naming convenience, not a second copy of the data. For implementation details, see the companion **[PrestoDB blog on the pluggable CLP connector](PRESTO_BLOG_URL)** and [YScope's optimizer walkthrough](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82).
 
 ## How Five Workers Serve the Workload: Avoiding Work at Every Layer
 
@@ -171,7 +171,7 @@ Three SQL functions would expose it: the tree of paths and types in a filtered s
 
 The metadata could carry more. Variables lifted out of message text are typed but unnamed. CLP records that a value is a string, not that the string is a library path. Naming them is bounded work, since a variable belongs to a format rather than an event, and CLP can pose a small question: one format string, one position, real values from that slot. Named that way, a `job_id` inside a message means the same thing as the `job_id` a query already filters on, and grouping related events becomes metadata work too.
 
-## From Open Source to Production: Collaboration Across Teams and Companies
+## Collaboration Across Teams and Companies
 
 This production system grew from nearly five years of sustained collaboration across teams and companies. The public [CLP](https://github.com/y-scope/clp) and [CLP Presto connector](https://github.com/y-scope/clp-plugin-presto-connector) projects provide shared storage and query foundations. Production at Uber required additional query planning, integration with the metastore and query layer, and operational support.
 
@@ -185,6 +185,8 @@ Adding SQL syntax was not the hard part. The challenge was keeping evolving logs
 
 The broader lesson is that a common SQL interface does not require one physical storage model. Presto brings CLP data into Uber’s established query ecosystem and handles planning and distributed execution, while CLP preserves evolving structure and searches its compressed representation directly. That preserved structure is also the path forward: the metadata that avoids query work today can decide where data lives and answer questions without reading the events behind it.
 
-[^compression-comparison]: The first blog reported 169× compression for Spark messages alone. The current aggregate figure covers a broader set of workloads whose records include operational fields such as hostnames, tags, and high-cardinality trace IDs (UUIDs). High-cardinality trace IDs are nearly unique and give the compressor little repetition to exploit. Even so, a reported object-storage footprint of 750–850 TB for 25 PB of source data corresponds to roughly 97% less storage.
-
 [^work-reduction]: We divided the aggregate number of events covered by successful queries' time ranges during the 30-day window by the aggregate number of events those queries examined after metadata pruning, guaranteed latest-N file selection where applicable, and CLP filtering.
+
+[^hybrid-layouts]: The third row already exists in production, not only as an abstraction. Uber's own hot storage tier combines typed, indexed columns for latency-critical fields with a full-text search layer on top and CLP for the natural-language columns underneath both, trading some of CLP's compression for the random-read latency that tier needs. Parquet's Variant type with shredding occupies the same row: shredding promotes chosen paths to typed columns in advance, while Variant keeps everything else as one dynamic value. Variant could still matter to CLP for a narrower purpose once Presto supports it end to end, as a single type for handing a polymorphic path to a user without deciding its type first, which changes how a value is presented rather than how CLP stores or searches it. The companion **[PrestoDB blog](PRESTO_BLOG_URL)** covers Variant in depth.
+
+[^compression-comparison]: The first blog reported 169× compression for Spark messages alone. The current aggregate figure covers a broader set of workloads whose records include operational fields such as hostnames, tags, and high-cardinality trace IDs (UUIDs). High-cardinality trace IDs are nearly unique and give the compressor little repetition to exploit. Even so, a reported object-storage footprint of 750–850 TB for 25 PB of source data corresponds to roughly 97% less storage.
