@@ -8,7 +8,7 @@ As CLP adoption expanded, investigations spanned more hosts, application version
 
 Making this practical took more than a SQL interface. Arriving events had to stay compressed and searchable, closed data had to consolidate without interrupting access, and at query time simple time-range pruning was nowhere near enough. In aggregate across a 30-day production window, successful queries’ time ranges covered more than 200,000 times as many events as the system ultimately examined.[^work-reduction] The metadata that avoids that work could later serve agents.
 
-## Organizing Evolving Logs for Columnar Compression and Search
+## Columnar Compression and Search for Evolving Semi-Structured Data
 
 Uber's logging platform cannot control the structure of the events it stores. Two versions of the same application often run at once, so a field such as `status_code` may arrive as a number from one, a string from another, and nested inside an object from a third. Fields appear, move, and change type without warning, and users still expect every one of them to remain searchable. A **field path** identifies a location inside an event: `event.request_id` is `request_id` inside `event`.
 
@@ -123,11 +123,15 @@ Across a longer observation period, workers typically used **5–10% of their CP
 
 With the production path established, the same metadata can guide where data lives and answer questions that would otherwise require reading it.
 
+### One Approach for Logs, Traces, and Metrics
+
+**The same flexibility is not specific to logs.** Structure that varies event by event and can't be predicted in advance is the same shape some observability platforms now lean on when they unify logs, traces, and metrics into one flexible record per request, sometimes called a wide event. CLP's schema discovery already accepts whatever fields a producer emits without deciding a promotion list in advance, whether that producer writes a log line, a trace span, or a metric with high-cardinality labels. The same typed and wildcard access that reaches a nested log field would reach a trace attribute or a metric label the same way. Nothing about what made 25 PB of logs tractable here required deciding in advance which kind of telemetry a field belonged to.
+
 ### Better Storage Decisions from Existing Metadata
 
-**Indexing only what needs it.** A fully indexed tier earns its cost for data queried constantly under tight latency requirements. Much data is not. Because CLP preserves the original events losslessly and stays queryable, it could serve as the default tier, with a faster index provisioned only where access patterns justify it. How often a table is queried, which fields and time ranges those queries touch, and how long it must be retained are all things the metastore already records. If demand rises again, the index could be repopulated from CLP with the exact events, so shrinking it is reversible.
+**Indexing only what needs it.** CLP could serve as the default tier for everything, with a faster index reserved for the tables whose access patterns and latency needs actually justify one, using signals the metastore already records.
 
-**Grouping files that belong together.** Which files share an archive is currently an operational decision. Schema, logtypes, source, and query history could make it a deliberate one: files with similar structure deduplicate better, and files queried together, such as Spark driver and executor logs, mean fewer archives to open. Time range, retention, freshness, and archive-size limits still bound each group.
+**Grouping files that belong together.** Which files share an archive could be a deliberate, metadata-guided decision instead of an operational one, using schema, logtype, and query-history similarity to improve deduplication and reduce how many archives a query opens.
 
 ### Beyond Guesswork: CLP Context for Agents
 
