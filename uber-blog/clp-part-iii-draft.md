@@ -6,13 +6,13 @@ This is the third blog in Uber’s CLP series. [“Reducing Logging Cost by Two 
 
 As CLP adoption expanded, investigations spanned more hosts, application versions, and time ranges. Engineers often start with a symptom or question rather than an exact field or message. They need to discover evolving fields and types, find and count recurring patterns, compare behavior across selected events, and perhaps join logs with related datasets. Uber’s mature Presto query ecosystem, with established governance, access control, and tooling, was the natural place to provide these capabilities.
 
-Making this practical required more than a SQL interface. The storage path had to preserve changing paths and conflicting types, keep arriving events compressed and searchable, and consolidate closed data for better compression and faster search without interrupting access. At query time, simple time-range pruning was not enough. We use metastore metadata to remove files that cannot match, skip older files that may match but cannot change a query's latest results, and use CLP’s stored structure, message formats, and values to narrow each selected scan. In aggregate across a 30-day production window, successful queries’ time ranges covered more than 200,000 times as many events as the system ultimately examined.[^work-reduction] This article follows that design from storage through query execution, reports its production results, and shows how the same metadata could later give agents compact context before they retrieve exact evidence.
+Making this practical took more than a SQL interface. Arriving events had to stay compressed and searchable, closed data had to consolidate without interrupting access, and at query time simple time-range pruning was nowhere near enough. In aggregate across a 30-day production window, successful queries’ time ranges covered more than 200,000 times as many events as the system ultimately examined.[^work-reduction] The metadata that avoids that work could later serve agents.
 
 ## Organizing Evolving Logs for Columnar Compression and Search
 
 Uber's logging platform cannot control the structure of the events it stores. Two versions of the same application often run at once, so a field such as `status_code` may arrive as a number from one, a string from another, and nested inside an object from a third. Fields appear, move, and change type without warning, and users still expect every one of them to remain searchable. A **field path** identifies a location inside an event: `event.request_id` is `request_id` inside `event`.
 
-Uber stores these logs in CLP, which losslessly preserves each source file's path, every event's nested structure and values, and the order of events within each file. Rather than storing each event as a single document, CLP organizes every observed field path and value type for columnar access within each archive. It requires neither a global schema nor a predefined list of important fields.
+Uber stores these logs in CLP, which losslessly preserves each source file's path, every event's nested structure and values, and the order of events within each file. It requires neither a global schema nor a predefined list of important fields.
 
 Think of a CLP archive as a collection of small internal tables. Events with the same nested field paths and corresponding value types share a table, where each field becomes a column of encoded values of one type. For natural-language text such as log messages, CLP identifies the static text shared by similar messages and stores it as a recurring format called a **logtype**, encoding the changing parts such as library paths, IDs, and counts separately while preserving their types. An archive-local schema tree maps each observed combination of field path and value type to the tables and columns that store its values.
 
@@ -29,9 +29,7 @@ Because CLP derives each archive's layout from observed data, new fields and typ
 > | Document plus selected typed columns | Which paths deserve their own columns | Direct scans for chosen paths, navigation for the rest | None |
 > | CLP | Nothing | Only relevant encoded columns and values are scanned | Recurring text stored once, variables typed and separated |
 >
-> The cost sits on the other side of the ledger. CLP is specialized storage with its own query integration, which is what the rest of this article is about.
-
-Archives therefore provide high compression and selective search once data is consolidated.
+> The cost is that CLP is specialized storage with its own query integration, which is what the rest of this article is about.
 
 ## Compressed and Queryable from Arrival through Archival
 
@@ -83,17 +81,17 @@ ORDER BY timestamp DESC
 LIMIT 100;
 ```
 
-All these access forms use the same CLP-native execution path. Exposing a path as an ordinary column does not create another stored copy. The connector hides substantial complexity behind this simple interface. For implementation details, see the companion **[PrestoDB blog on the pluggable CLP connector](PRESTO_BLOG_URL)** and [YScope's optimizer walkthrough](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82).
+All these access forms use the same CLP-native execution path. Exposing a path as an ordinary column does not create another stored copy. For implementation details, see the companion **[PrestoDB blog on the pluggable CLP connector](PRESTO_BLOG_URL)** and [YScope's optimizer walkthrough](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82).
 
 ## How Five Workers Serve the Workload: Avoiding Work at Every Layer
 
-Typed SQL explains how engineers use the system. Avoiding work explains how five workers can serve it. Returning 100 rows can still be expensive if Presto schedules every file in a 30-day range and examines every event. Uber narrows that work at three progressively finer levels: files that cannot match, older files that latest-N planning can avoid scheduling, and irrelevant structures inside each selected CLP scan.
+Typed SQL explains how engineers use the system. Avoiding work explains how five workers can serve it. Returning 100 rows can still be expensive if Presto schedules every file in a 30-day range and examines every event. Uber narrows that work at three progressively finer levels.
 
 **1. Prune files that cannot match.** The metastore maintains per-file event-time bounds and dimensions such as application, host, job, and correlation ID, then compares query filters with that metadata. If a file cannot match, Presto never creates a split for it. A split is the unit of work assigned to a worker, so no worker opens that file. This familiar optimization is effective, but it still keeps every file that might contain even one match.
 
 **2. Avoid scheduling older files for latest-N queries.** Most log searches ask only for the latest `N` matches with `ORDER BY timestamp DESC LIMIT N`. File pruning keeps every file that may match, even when its matches are too old to enter the result. Without limit-aware file selection, Presto must process every file left after pruning before it can guarantee the latest `N`. Uber's metastore instead considers the remaining files newest first and, when conditions allow, stops before unnecessary older files become splits.
 
-This is not another form of pruning. A skipped file may contain valid matches. Deciding that those matches cannot change the answer requires reasoning across file time bounds and matching-event counts. The obvious stopping rule is subtly wrong. The callout explains the trap and how the guaranteed and approximate modes handle it.
+This is not another form of pruning. A skipped file may contain valid matches. Deciding that those matches cannot change the answer requires reasoning across file time bounds and matching-event counts. The obvious stopping rule is subtly wrong.
 
 > ### Why stopping after N matches can be wrong
 >
@@ -119,7 +117,7 @@ Each month, the workloads described above produce approximately **25 PB** of log
 
 In the same 30-day production window, **five nodes**, each running one 48-core Presto Native worker, served **hundreds of users per week** and completed **thousands of successful queries per day**. Workers streamed selected data directly from object storage without relying on a cache. Successful queries had a mean response time of roughly **two seconds**, and **99% completed within 26 seconds**.
 
-Uber's CLP query deployment balances interactive query performance with a small footprint on shared infrastructure. Rather than maximizing scan throughput, we deliberately limit our object-storage read rate and parallelism to avoid disrupting other workloads while still meeting users' latency needs. Across a longer observation period, workers typically used **5–10% of their CPU and memory**, with light network and I/O use. The remaining capacity provides headroom as demand and scope grow. A few engineers maintain the system alongside their broader platform responsibilities.
+Rather than maximizing scan throughput, we deliberately limit our object-storage read rate and parallelism to avoid disrupting other workloads while still meeting users' latency needs. Across a longer observation period, workers typically used **5–10% of their CPU and memory**, with light network and I/O use. The remaining capacity provides headroom as demand and scope grow. A few engineers maintain the system alongside their broader platform responsibilities.
 
 ## What Comes Next
 
@@ -137,7 +135,7 @@ While compressing, CLP extracts the semantics of what it stores: the structure o
 
 That makes a class of questions answerable without reading any events at all. Which fields exist in this slice, not in the table as a whole, and what types they hold. Which message formats occur, and how often. Queries that do need events start from a far smaller candidate set, because the metadata rules out most of it first.
 
-Agents already issue more than half of CLP queries at Uber, for root cause analysis, behavior analytics, and exploratory debugging. They are the ones who need this most. An agent arriving at an unfamiliar table cannot ask what the columns are, because semi-structured logs have no fixed answer, and reading a sample surfaces the common formats while hiding the rare one it is looking for. Metadata gives it the whole picture at a size it can afford to hold in context.
+Agents already issue more than half of CLP queries at Uber, for root cause analysis, behavior analytics, and exploratory debugging, and they need this most. An agent arriving at an unfamiliar table cannot ask what the columns are, because semi-structured logs have no fixed answer, and reading a sample surfaces the common formats while hiding the rare one it is looking for. Metadata gives it the whole picture at a size it can afford to hold in context.
 
 Three SQL functions would expose it: the tree of paths and types in a filtered slice, the recurring formats behind matching events, and a way to select those formats by meaning rather than exact wording. The interface is designed. What it still needs is refinement and validation.
 
