@@ -16,7 +16,7 @@ Uber stores these logs in CLP, which losslessly preserves each source file's pat
 
 Think of a CLP archive as a collection of small internal tables. Events with the same nested field paths and corresponding value types share a table, where each field becomes a column of encoded values of one type. For natural-language text such as log messages, CLP identifies the static text shared by similar messages and stores it as a recurring format called a **logtype**, encoding the changing parts such as library paths, IDs, and counts separately while preserving their types. An archive-local schema tree maps each observed combination of field path and value type to the tables and columns that store its values.
 
-Because CLP derives each archive's layout from observed data, new fields and type changes are absorbed during compression without a global schema update, and each shared schema is stored once rather than repeated with every event. Values that share a field path and type sit together, which compresses well, and dictionaries avoid repeating logtypes and values. The same organization narrows a search: the schema tree selects only the tables and columns that can hold a matching field of the requested type, dictionaries rule out patterns and values that cannot match, and CLP reconstructs a complete event only when one is requested. The [μSlope paper from OSDI '24](https://www.usenix.org/conference/osdi24/presentation/wang-rui) describes the formal layout.
+Because CLP derives each archive's layout from observed data, new fields and type changes are absorbed during compression without a global schema update, and each shared schema is stored once rather than repeated with every event. Values that share a field path and type sit together, which compresses well, and dictionaries avoid repeating logtypes and values. The same organization narrows a search: the schema tree selects only the tables and columns that can hold a matching field of the requested type, dictionaries rule out patterns and values that cannot match, and CLP reconstructs a complete event only when one is requested. The [μSlope paper from OSDI '24](https://www.usenix.org/conference/osdi24/presentation/wang-rui), joint work by YScope, the University of Toronto, and Uber, describes the formal layout.
 
 > ### Four ways to store an evolving event
 >
@@ -133,15 +133,13 @@ With the production path established, the same metadata and compressed structure
 
 ### Beyond Guesswork: CLP Context for Agents
 
-AI agents already issue more than half of CLP queries at Uber for root cause analysis, behavior analytics, and exploratory debugging. On an ordinary table, an agent starts by asking what the columns are, and the answer is complete and stable. Semi-structured logs make that a difficult question to answer well. The fields live inside the events, they differ from one event to the next, and they change as applications ship.
+While compressing, CLP extracts the semantics of what it stores: the structure of each event, the recurring formats behind similar log lines, and the variables pulled out of them. This metadata is small, and it grows with the number of distinct structures rather than the number of events, so it stays roughly the same size whether it describes an hour of logs or a month.
 
-A separate index could enumerate them, but it describes the whole table, not the slice a query's filters select. It also has to be kept in sync with data that never stops changing. Reading a few events and inferring the rest works on a small or familiar dataset. Across a month of logs it shows the common formats and hides the rest, which is backwards when the failure that matters is rare.
+That makes a class of questions answerable without reading any events at all. Which fields exist in this slice and what types they hold. Which message formats occur, and how often. Queries that do need events start from a far smaller candidate set, because the metadata rules out most of it first.
 
-Searching by keyword depends on already knowing the wording. A narrow guess misses events phrased differently. A broad one, such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`, buries the evidence in noise. Both also assume the text sits in a top-level `message` field, when in evolving logs it may sit levels down under a name the agent never tried.
+Agents already issue more than half of CLP queries at Uber, for root cause analysis, behavior analytics, and exploratory debugging. They are the ones who need this most. An agent arriving at an unfamiliar table cannot ask what the columns are, because semi-structured logs have no fixed answer, and reading a sample surfaces the common formats while hiding the rare one it is looking for. Metadata gives it the whole picture at a size it can afford to hold in context.
 
-CLP already knows the answer. Compressing these events required recording which fields and types occur, and finding the wording that thousands of similar messages share so each recurring format is stored once. The grouping an agent wants is not something a query has to compute. It is a byproduct of how the data was written. The schema tree and the stored formats are not an index kept beside the events. They are what the compressed data is fundamentally made of, so nothing extra is stored and nothing can drift out of sync.
-
-The interface is designed. What it still needs is refinement and validation. There is more than one reasonable way to hand a tree back through SQL, and only use will show which one feels natural. Three functions would return the tree of nested paths and value types in a filtered slice of data, search stored message formats by meaning rather than exact wording, and expose the recurring format behind each event so SQL can group by it. Each would be useful alone. Together they turn a vague question into a query.
+Three SQL functions would expose it: the tree of paths and types in a filtered slice, the recurring formats behind matching events, and a way to select those formats by meaning rather than exact wording. The interface is designed. What it still needs is refinement and validation.
 
 > ### From a vague question to three recurring failure patterns
 >
@@ -175,13 +173,7 @@ The interface is designed. What it still needs is refinement and validation. The
 >
 > The agent reads three formats and their counts instead of 72 near-identical events, then retrieves the exact events it needs as evidence.
 
-All three read everything the filters select rather than a sample of it, so an agent's context is bounded by the distinct formats inside that slice, not by the events it contains. Filtering narrows the slice and deduplication collapses what remains, so the context stays small even when the underlying data is not. They expose what compression already produces.
-
-CLP could also produce more. The variables it lifts out of message text are typed but unnamed. It records that a value is a string or an integer, but not that the string is a library path or that the integer is a job ID.
-
-Names make meaning travel. Two log lines that share no wording, one announcing that a job started and another reporting that it failed, both carry the same job ID. Label both variables the same way and the events can be grouped and ordered into what happened to that job. The same label matches the `job_id` a query already filters on, so free text and structured fields stop being separate worlds.
-
-Both steps stay bounded at petabyte scale. Deriving a label is a narrow problem: CLP can supply one format string, the position of the variable in question, and a sample of the values that appear there, instead of a pile of logs to interpret. That runs once per format and can be refined over time, so it tracks distinct logging statements, not log volume. Using the labels is bounded for the same reason, since grouping and chaining run over stored formats, labels and values, not over the events themselves. It is the property that keeps queries cheap here, applied one layer up.
+The metadata could carry more. Variables lifted out of message text are typed but unnamed. CLP records that a value is a string, not that the string is a library path. Naming them is bounded work, since a variable belongs to a format rather than an event, and CLP can pose a small question: one format string, one position, real values from that slot. Named that way, a `job_id` inside a message means the same thing as the `job_id` a query already filters on, and grouping related events becomes metadata work too.
 
 ## From Open Source to Production: Collaboration Across Teams and Companies
 
