@@ -135,7 +135,7 @@ While compressing, CLP extracts the semantics of what it stores: the structure o
 
 That makes a class of questions answerable without reading any events at all. Which fields exist in this slice, not in the table as a whole, and what types they hold. Which message formats occur, and how often. Queries that do need events start from a far smaller candidate set, because the metadata rules out most of it first.
 
-Agents already issue more than half of CLP queries at Uber, for root cause analysis, behavior analytics, and exploratory debugging, and they need this most. An agent arriving at an unfamiliar table cannot ask what the columns are, because semi-structured logs have no fixed answer, and reading a sample surfaces the common formats while hiding the rare one it is looking for. Metadata gives it the whole picture at a size it can afford to hold in context.
+Agents already issue **more than half of CLP queries** at Uber, for root cause analysis, behavior analytics, and exploratory debugging, and they need this most. An agent arriving at an unfamiliar table cannot ask what the columns are, because semi-structured logs have no fixed answer, and reading a sample surfaces the common formats while hiding the rare one it is looking for. Metadata gives it the whole picture at a size it can afford to hold in context.
 
 Three SQL functions would expose it: the tree of paths and types in a filtered slice, the recurring formats behind matching events, and a way to select those formats by meaning rather than exact wording. The interface is designed. What it still needs is refinement and validation.
 
@@ -159,7 +159,7 @@ Three SQL functions would expose it: the tree of paths and types in a filtered s
 > GROUP BY PATTERN('message.content[*].content');
 > ```
 >
-> `PATTERN()` returns the stored format behind each matching event, with its changing values replaced by named placeholders, illustrated below rather than stored as shown. `SEMANTIC()` does its matching against those same stored formats rather than against every message:
+> `PATTERN()` returns the stored format behind each matching event, with its changing values replaced by named placeholders, illustrated below rather than stored as shown. `SEMANTIC()` embeds the description once and compares it against a stored embedding for each distinct format, not one for every message, so its cost tracks the number of formats, not events:
 >
 > | failure pattern | occurrences |
 > | --- | ---: |
