@@ -117,7 +117,7 @@ This article may define ERTs, the MST, and logtypes briefly because readers need
 
 ### 6. Building Pluggable Presto Native Connectors: Lessons from CLP
 
-- State that YScope engineers collaborated with the Presto community to build the CLP connector as one of the first end-to-end, out-of-band connector plugins for Presto Native, subject to the final chronology check.
+- State that YScope engineers collaborated with the Presto community to build the CLP connector as the first end-to-end, out-of-band connector plugin for Presto Native. The chronology check is complete, so the claim ships unhedged.
 - Explicitly contrast the earlier in-tree integration at the Velox execution-framework layer, which lived directly in the Presto Native and Velox source trees and required a fork while those changes remained outside upstream, against the current out-of-band library at the Presto Native worker-plugin boundary. Never call the earlier implementation a plugin or non-native.
 - Show Java coordinator responsibilities—metadata, tables, splits, rewriting, and handle serialization—versus native worker responsibilities—registration, deserialization, CLP scanning, and columnar batches.
 - Tie the boundary back to the opening schema problem: Java provides a stable Presto interface, while the native plugin interprets split-local CLP structure without forcing every observed path and type into one global table schema.

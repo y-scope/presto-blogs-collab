@@ -97,7 +97,7 @@
 - **Why:** This is the article's main Presto contribution.
 - **Takeaway:** Native execution moved out of the fork, not out of the worker.
 - **Important points:**
-  - YScope engineers collaborated with the Presto community to build one of the first end-to-end, out-of-band connector plugins for Presto Native.
+  - YScope engineers collaborated with the Presto community to build the first end-to-end, out-of-band connector plugin for Presto Native.
   - **Boundary:** Earlier integration lived directly in the Presto Native and Velox source trees, requiring a fork while those changes remained outside upstream. The current library loads through the Presto Native worker-plugin interface.
   - **Java:** Catalogs, metadata, splits, rewriting, and handle codecs.
   - **Native:** Load the `.so`, deserialize handles, scan CLP, and return columnar batches.

@@ -23,7 +23,7 @@
 - Every production number traces to an approved figure backed by something real, a dashboard, a screenshot, an internal query result, not just a verbal sign-off. The two aggregate ones also carry a footnote defining exactly how they were computed.
 - Nothing about Uber's other storage systems or any named competitor in the visible article. The hot-tier and Parquet Variant comparison lives in a footnote only.
 - AI section: no cost superlatives until workload, denominator, and baseline are defined. No "for pennies." No claiming something is deployed before it's validated. Feasibility is explained, not asserted.
-- "First" claims stay hedged to "one of the first" until chronology is verified. The one such claim here, the first end-to-end pluggable connector for Presto Native, has since been verified by the people who built it, so it ships unhedged. The companion Presto blog draft still says "one of the first" and needs reconciling before both publish.
+- "First" claims stay hedged until chronology is verified. The one such claim here, the first end-to-end pluggable connector for Presto Native, has been verified by the people who built it, so it ships unhedged in both this article and the companion Presto post.
 - Sentence level: no em dashes, no semicolons in prose, no second person.
 
 **Tone**
@@ -48,12 +48,12 @@
 
 **Weaknesses**
 - Density costs two readers outright. The CEO and the casual outsider both bail before reaching the piece's best material, because nothing in it recruits a reader who doesn't already have the question.
-- One precision item is still open: two `PRESTO_BLOG_URL` placeholders depend on a companion post that has not shipped. The other closed when the "first end-to-end pluggable connector" chronology was verified, though the companion Presto draft still hedges the same claim, so the two pieces currently contradict each other.
+- One precision item is still open: two `PRESTO_BLOG_URL` placeholders depend on a companion post that has not shipped. The other closed when the "first end-to-end pluggable connector" chronology was verified, and both pieces now state it the same way.
 - The labeling QA and review loop stays implicit, the one place a genuinely skeptical AI reader could still push.
 - No struggle narrative anywhere. Deliberate, but it is the ceiling on how shareable this piece can be outside the readers it is actually written for.
 
 **Strategy**
-- Close the remaining precision item before publication, the two `PRESTO_BLOG_URL` placeholders, and reconcile the "first" claim across both pieces so the Uber draft and the companion Presto draft do not state it differently. Cheap and mechanical, and the last thing holding the CTO's score below a clean number.
+- Close the remaining precision item before publication: the two `PRESTO_BLOG_URL` placeholders. Cheap and mechanical, and the last thing holding the CTO's score below a clean number.
 - Do not chase the CEO or casual-reader gap by simplifying the whole piece. That would blunt exactly what earns trust from the CTO, Senior Dev, YScope, and Head of AI, the readers who actually decide whether this ships and whether it wins anyone real. Bolding the agent-majority stat, then moving it to open the section, was the right size of fix for that gap. A bigger one is not.
 - Leave the junior-dev gap alone. That reader was never the intended audience, and simplifying for them would cost precision the intended audience needs.
 - Leave the missing war story alone too. It is not an oversight. This piece sits closer to a systems paper translated for engineers than a narrative blog, and precision is the differentiator that genre rewards, not a story arc.

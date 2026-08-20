@@ -862,7 +862,7 @@ Tim Meehan's announcement describes the contemporary path as enabling out-of-ban
 
 ## 8. What Other Presto Native Connector Authors Can Reuse
 
-CLP is one of Presto Native's first independently developed, pluggable connectors and therefore a practical reference implementation for other Presto Native connector authors. This article should explain that lifecycle without reproducing full repository documentation. Keep “one of the first” until the absolute “first” chronology is verified.
+CLP is Presto Native's first independently developed, pluggable connector and therefore a practical reference implementation for other Presto Native connector authors. This article should explain that lifecycle without reproducing full repository documentation. The chronology is verified, so the claim ships unhedged. Do not restore “one of the first.”
 
 ### 8.1 Define the contract
 
@@ -1527,7 +1527,7 @@ The article should provide:
 - Exact current build/package commands.
 - Exact artifact publication mechanism.
 - Exact Presto/Velox compatibility story.
-- “First” versus “one of the first” native external connector wording.
+- Resolved: the native external connector is described as the first, unhedged, in both drafts.
 - Named Uber contributors, if any, to upstream plugin infrastructure.
 - Any partner-scale statement.
 - Any semantic-search cost/performance claim.

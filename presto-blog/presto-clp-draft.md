@@ -91,7 +91,7 @@ Behind this deployment is a contract between the Java coordinator plugin and the
 
 ## Building Pluggable Presto Native Connectors: Lessons from CLP
 
-[Presto Native](https://prestodb.io/docs/current/presto-cpp.html), Presto's C++ worker implementation, executes connector scans in Velox-based workers. An out-of-band connector therefore needs a Java coordinator half and a dynamically loaded native worker half. YScope engineers collaborated with the Presto community to build CLP as one of the first end-to-end plugins across that boundary.
+[Presto Native](https://prestodb.io/docs/current/presto-cpp.html), Presto's C++ worker implementation, executes connector scans in Velox-based workers. An out-of-band connector therefore needs a Java coordinator half and a dynamically loaded native worker half. YScope engineers collaborated with the Presto community to build CLP as the first end-to-end plugin across that boundary.
 
 The earlier integration already ran CLP natively, but it entered at the Velox execution layer and lived directly in the Presto Native and Velox source trees. Because those changes were not upstream, the deployment used a fork. It was an in-tree integration, not an external plugin. The native half of the current connector instead integrates with Presto Native at the worker-plugin boundary: a separate shared library built against Presto and Velox headers and loaded out of band. Native execution moved out of the fork, not out of the worker.
 

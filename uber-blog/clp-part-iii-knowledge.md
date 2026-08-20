@@ -1,4 +1,4 @@
-# CLP Part III Knowledge Base
+# CLP Part III Knowledge
 
 - **Status:** Synchronized source of truth for the Uber Engineering draft and publication outline
 - **Updated:** August 19, 2026
@@ -757,7 +757,7 @@ Always distinguish:
 - Meta's Presto and Velox teams joined IBM's Presto team in design discussions, helping YScope and Uber test assumptions and refine the architecture.
 - Do not claim YScope created all plugin infrastructure.
 - Use **the first end-to-end pluggable connector for Presto Native**. The chronology is verified and the claim ships unhedged. Do not soften it to "one of the first."
-- Known inconsistency to resolve separately: the companion Presto draft (`presto-blog/presto-clp-draft.md`, line 94) still says CLP was built as "one of the first end-to-end plugins across that boundary," which no longer matches the Uber draft.
+- Both drafts now state the claim unhedged. The companion Presto draft says CLP was built as "the first end-to-end plugin across that boundary."
 
 Relevant upstream changes:
 
