@@ -1,4 +1,4 @@
-# CLP Part III: Editorial Pitch and Reader Review
+# CLP Part III: Editorial Pitch and Reader Reception
 
 ## The 1-Pager Pitch
 
