@@ -1,6 +1,6 @@
 # Bringing Native SQL to Petabyte-Scale Semi-Structured Logs: Inside Uber’s CLP and Presto Infrastructure (Part III)
 
-Structural record for the finished draft: what the article is, section by section, plus the constraints a later editor cannot recover by reading it. Pitch, tone, sentence-level restrictions, and reader reception live in `clp-part-iii-review.md` and are not repeated here.
+Structural record for the finished draft: what the article is, section by section, plus the constraints a later editor cannot recover by reading it. Pitch, tone, sentence-level restrictions, and reader reception live in `clp-part-iii-pitch.md` and are not repeated here.
 
 - **Type:** Production architecture case study
 - **Length:** 3,821 words as published, against an original target of roughly 3,500. Skimmability was preferred over a rigid cap.
@@ -88,7 +88,7 @@ Structural record for the finished draft: what the article is, section by sectio
 - Do not supply numbers the draft deliberately withholds: the query layer's threshold values in Section 4, and a network and I/O utilization percentage in Section 5.
 - Strict third person throughout, a deliberate break from the earlier blogs' "we." No "we," "our," or "us," even for Uber's own design choices. Name the team or the system as the actor.
 - Present tense only for behavior that is proven and currently running. Conditional tense (would, could) for the proposed `SCHEMA()`, `PATTERN()`, and `SEMANTIC()` interfaces.
-- Carve-outs to the sentence rules in `clp-part-iii-review.md`: one semicolon is allowed where SQL syntax requires it, and en dashes stay in numeric ranges such as 750–850 TB, 5–10%, and 29–33×.
+- Carve-outs to the sentence rules in `clp-part-iii-pitch.md`: one semicolon is allowed where SQL syntax requires it, and en dashes stay in numeric ranges such as 750–850 TB, 5–10%, and 29–33×.
 
 ## Before publication
 
