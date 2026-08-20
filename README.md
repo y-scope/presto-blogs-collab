@@ -17,6 +17,8 @@ Each directory follows the same core convention:
 
 `presto-blog/` adds [`presto-clp-contract.md`](presto-blog/presto-clp-contract.md), the editorial contract behind its outline: narrative budget, per-section contracts, evidence labels, and safeguards.
 
+Each directory also carries a **pitch** (`*-pitch.md`): the case for the article, its restrictions and tone, and a table scoring how each intended reader receives it.
+
 `uber-blog/` adds two more: [`clp-part-iii-pitch.md`](uber-blog/clp-part-iii-pitch.md), holding the editorial pitch, tone, restrictions, and a reader-reception table, and [`social-media.md`](uber-blog/social-media.md) for launch copy.
 
 ## Recommended Workflow
