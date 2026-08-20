@@ -15,6 +15,8 @@ Each directory follows the same core convention:
 2. **Outline** (`*-outline.md`) — structural record of the article: what each section is, deliberate omissions, figure and footnote specs, and open pre-publication items.
 3. **Draft** (`*-draft.md`) — the publication-style article itself.
 
+`presto-blog/` adds [`presto-clp-contract.md`](presto-blog/presto-clp-contract.md), the editorial contract behind its outline: narrative budget, per-section contracts, evidence labels, and safeguards.
+
 `uber-blog/` adds two more: [`clp-part-iii-pitch.md`](uber-blog/clp-part-iii-pitch.md), holding the editorial pitch, tone, restrictions, and a reader-reception table, and [`social-media.md`](uber-blog/social-media.md) for launch copy.
 
 ## Recommended Workflow
