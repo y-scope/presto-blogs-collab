@@ -1,30 +1,23 @@
 # Social Media Copy
 
-Replace `BLOG_URL` with the published Uber Engineering blog URL.
+Replace `BLOG_URL` with the published Uber Engineering blog URL. Third person throughout, so either account can post it unchanged.
 
 ## LinkedIn
 
-Uber's CLP workloads produce 25 PB of raw semi-structured logs each month. Yet five Presto Native workers serve SQL queries over the resulting compressed corpus. How?
+Uber's CLP platform compresses 25 PB of logs a month into 750-850 TB, about 97% less. Five Presto Native workers serve SQL over it: hundreds of weekly active users, thousands of successful queries a day, ~2s mean response.
 
-In Part III of Uber's CLP series, we explain how the platform:
+Across a 30-day production window, successful queries' time ranges covered more than 200,000x as many events as the system ultimately examined.
 
-- Keeps arriving data compressed and queryable in KV-IR
-- Consolidates older data into columnar CLP archives
-- Uses metadata-driven planning and CLP-native search to avoid unnecessary work
-- Exposes evolving, polymorphic data through typed SQL
+More than half of those queries already come from agents. Compression itself materializes each event's schema and recurring message formats, so proposed SQL functions would let an agent learn what a slice holds without reading events. The idea reaches past logs to the wide event: logs, traces, and metrics in one record.
 
-Across a 30-day production measurement, these layers reduced the aggregate event count examined by more than 200,000× compared with time-range filtering alone.
+Part III of Uber's CLP series, with YScope and the PrestoDB community.
 
-The work brings together Uber, YScope, and the PrestoDB community—and establishes a foundation for future agent-oriented search and discovery.
+[BLOG_URL](BLOG_URL)
 
-Read the engineering story: [BLOG_URL](BLOG_URL)
-
-#UberEngineering #PrestoDB #Observability
+#UberEngineering #PrestoDB #Observability #AIAgents
 
 ## X / Twitter
 
-Uber's CLP workloads produce 25 PB of raw semi-structured logs each month. Five Presto Native workers serve SQL queries over the compressed corpus.
+Uber compresses 25 PB of logs a month into 750-850 TB and serves SQL over it with five Presto Native workers, ~2s mean response. More than half of those queries come from agents.
 
-Part III explains how metadata planning and CLP-native scans avoid unnecessary work at every layer.
-
-[BLOG_URL](BLOG_URL)
+Part III: [BLOG_URL](BLOG_URL)
