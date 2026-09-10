@@ -42,11 +42,11 @@
   <rect class="glyph" x="120" y="160" width="50" height="50"/>
   <rect class="glyph" x="190" y="160" width="50" height="50"/>
   <rect class="glyph" x="260" y="160" width="50" height="50"/>
-  <text class="caption" x="230" y="240">containers</text>
+  <text class="caption" x="230" y="240">Containers</text>
   <path class="edge" d="M 230 250 L 230 275"/>
   <rect class="node" x="110" y="280" width="240" height="55"/>
-  <text class="label-sm" x="230" y="314">log collector</text>
-  <text class="caption" x="230" y="392">per host</text>
+  <text class="label-sm" x="230" y="314">Log Collector</text>
+  <text class="caption" x="230" y="392">Per Host</text>
 
   <path class="divider" d="M 440 110 L 440 400"/>
 
@@ -71,14 +71,14 @@
   <!-- ================= Shared tier ================= -->
   <path class="node" d="M 810 520 v 80 a 90 22 0 0 0 180 0 v -80"/>
   <ellipse class="node" cx="900" cy="520" rx="90" ry="22"/>
-  <text class="label" x="900" y="572">metastore</text>
+  <text class="label" x="900" y="572">Metastore</text>
 
   <rect class="node" x="1050" y="525" width="200" height="70"/>
-  <text class="label-sm" x="1150" y="567">consolidation</text>
+  <text class="label-sm" x="1150" y="567">Consolidation</text>
 
-  <path class="node storage" d="M 1310 520 v 80 a 90 22 0 0 0 180 0 v -80"/>
+  <path class="node storage" d="M 1310 520 L 1326 600 a 74 18 0 0 0 148 0 L 1490 520"/>
   <ellipse class="node storage" cx="1400" cy="520" rx="90" ry="22"/>
-  <text class="label" x="1400" y="572">object storage</text>
+  <text class="label" x="1400" y="572">Object Storage</text>
 
   <path class="edge-both metadata" d="M 990 560 L 1050 560"/>
   <path class="edge" d="M 1250 560 L 1310 560"/>
@@ -98,7 +98,7 @@
   <rect class="person" x="246" y="776" width="28" height="19" rx="4"/>
   <path class="edge" d="M 190 810 L 190 845"/>
   <rect class="node" x="80" y="845" width="260" height="60"/>
-  <text class="label-sm" x="210" y="883">observability</text>
+  <text class="label-sm" x="210" y="883">Observability</text>
 
   <path class="divider" d="M 440 690 L 440 940"/>
 
@@ -113,7 +113,7 @@
 
   <!-- connector, overlapping Presto's edge -->
   <rect class="node" x="860" y="810" width="220" height="70"/>
-  <text class="label-sm" x="970" y="852">CLP connector</text>
+  <text class="label-sm" x="970" y="852">CLP Connector</text>
 
   <!-- search edges -->
   <path class="edge" d="M 340 875 L 520 875"/>
@@ -122,7 +122,7 @@
 
   <!-- legend -->
   <path class="legend-line" d="M 1180 990 L 1230 990"/>
-  <text class="legend-label" x="1242" y="997">log data</text>
+  <text class="legend-label" x="1242" y="997">Log Data</text>
   <path class="legend-line metadata" d="M 1370 990 L 1420 990"/>
-  <text class="legend-label" x="1432" y="997">metadata</text>
+  <text class="legend-label" x="1432" y="997">Metadata</text>
 </svg>
