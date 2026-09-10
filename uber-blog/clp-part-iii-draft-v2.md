@@ -40,7 +40,7 @@ The [Presto CLP connector documentation](https://docs.yscope.com/presto/connecto
 
 Figure 1 shows the architecture of Uber's logging infrastructure and the life cycle of a log along its two paths, ingestion and search, and the consolidation step that bridges them.
 
-![Uber's CLP logging infrastructure showing the ingestion and search paths sharing a metastore and object storage](figures/clp-system-overview.svg)
+![Uber's CLP logging infrastructure showing the ingestion and search paths sharing a metastore and object storage](figures/clp-system-overview-sketch.svg)
 
 *Figure 1: System overview of Uber's logging infrastructure*
 
@@ -82,7 +82,7 @@ Recall that Presto turns a query into a plan of steps executed top to bottom. Fo
 
 Our CLP connector intervenes in those first two steps. During split generation it applies two tiers of optimization, top-level filtering and TopN early termination, that use metastore metadata to avoid opening files at all. During table scan it applies a third, CLP-native vectorized execution, to read as little as possible from each file it does open. Figure 2 shows where each sits in the plan.
 
-![CLP connector optimizations mapped onto the Presto query plan](figures/clp-search-optimization.svg)
+![CLP connector optimizations mapped onto the Presto query plan](figures/clp-search-optimization-sketch.svg)
 
 *Figure 2: CLP connector optimizations in the Presto query plan*
 

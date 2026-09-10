@@ -1,0 +1,210 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="40 60 1630 1010" role="img" aria-labelledby="title description">
+  <title id="title">Uber's CLP logging infrastructure: ingestion and search paths</title>
+  <desc id="description">Ingestion: on every host, containers write rotated log files, a log collector picks them up and compresses them into KV-IR files, and each snapshot upload sends the file to object storage and its metadata to Kafka, from which the metastore consumes it. Between the paths, a consolidation service selects closed KV-IR files through the metastore, reads them from object storage, and writes immutable CLP archives back. Search: engineers and agents reach a Presto cluster directly or through the observability stack, which translates their queries to SQL. The Presto CLP connector prunes files using the metastore and scans the selected files from object storage.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#34343d"/>
+    </marker>
+    <pattern id="ruled-paper" patternUnits="userSpaceOnUse" width="1700" height="42">
+      <rect width="1700" height="42" fill="#fff8e8"/>
+      <path d="M 0 41.5 H 1700" stroke="#bad7e8" stroke-width="1.2" opacity="0.62"/>
+    </pattern>
+    <filter id="paper-grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="2" seed="11" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="gray-noise"/>
+      <feComponentTransfer in="gray-noise" result="faint-noise">
+        <feFuncA type="table" tableValues="0 0.055"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" in2="faint-noise" mode="multiply"/>
+    </filter>
+    <filter id="cut-paper-shadow" x="-12%" y="-15%" width="130%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018 0.055" numOctaves="1" seed="7" result="edge-noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="edge-noise" scale="0.65" xChannelSelector="R" yChannelSelector="G" result="rough-shape"/>
+      <feDropShadow in="rough-shape" dx="3.5" dy="4.5" stdDeviation="2.7" flood-color="#4a3828" flood-opacity="0.22"/>
+    </filter>
+    <style>
+      .service { fill: #eeeafd; stroke: #6d5bd0; stroke-width: 2; }
+      .platform { fill: #e3effc; stroke: #2f6fb3; stroke-width: 2; }
+      .source { fill: #fff0d2; stroke: #b7791f; stroke-width: 2; }
+      .storage { fill: #d7eee8; stroke: #2f8578; stroke-width: 2; }
+      .inner { fill: #fffdf8; stroke: #7ea3d8; stroke-width: 1.5; }
+      .legend-key { fill: #30323a; font: 22px "Trebuchet MS", "Avenir Next", Arial, sans-serif; }
+      .glyph { fill: #fffdf8; stroke: #c19245; stroke-width: 1.5; }
+      .person { fill: #fffdf8; stroke: #c19245; stroke-width: 1.5; }
+      .label { fill: #25262b; font: 700 26px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; text-anchor: middle; }
+      .label-sm { fill: #25262b; font: 700 22px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; text-anchor: middle; }
+      .sub { fill: #555963; font: 20px "Trebuchet MS", "Avenir Next", Arial, sans-serif; text-anchor: middle; }
+      .inner-label { fill: #25262b; font: 20px "Trebuchet MS", "Avenir Next", Arial, sans-serif; text-anchor: middle; }
+      .edge { fill: none; stroke: #34343d; stroke-width: 2.5; marker-end: url(#arrow); }
+      .edge-both { fill: none; stroke: #34343d; stroke-width: 2.5; marker-start: url(#arrow); marker-end: url(#arrow); }
+      .metadata { stroke-dasharray: 8 7; }
+      .tree { fill: none; stroke: #7ea3d8; stroke-width: 1.5; }
+      .legend-line { fill: none; stroke: #34343d; stroke-width: 3.5; }
+      .legend-label { fill: #30323a; font: 28px "Trebuchet MS", "Avenir Next", Arial, sans-serif; }
+      .service, .platform, .source, .storage, .inner, .glyph, .person {
+        filter: url(#cut-paper-shadow);
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .edge, .edge-both, .tree, .legend-line {
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1700" height="1070" fill="url(#ruled-paper)" filter="url(#paper-grain)"/>
+  <path d="M 58 0 V 1070" stroke="#dd7c75" stroke-width="2" opacity="0.58"/>
+  <path d="M 66 0 V 1070" stroke="#dd7c75" stroke-width="1" opacity="0.34"/>
+
+  <!-- legend, boxed, top edge on the per-host card's top and right edge on the metastore's right -->
+  <rect x="1050" y="100" width="580" height="110" rx="8" fill="#fffdf8" stroke="#8b95a1" stroke-width="1.5" filter="url(#cut-paper-shadow)"/>
+  <path class="legend-line" d="M 1074 132 L 1174 132"/>
+  <text class="legend-label" x="1190" y="141">Log data</text>
+  <path class="legend-line metadata" d="M 1366 132 L 1466 132"/>
+  <text class="legend-label" x="1606" y="141" text-anchor="end">Metadata</text>
+  <rect class="source" x="1074" y="170" width="24" height="24" rx="4"/>
+  <text class="legend-key" x="1106" y="189">Sources</text>
+  <rect class="service" x="1207" y="170" width="24" height="24" rx="4"/>
+  <text class="legend-key" x="1239" y="189">CLP</text>
+  <rect class="platform" x="1340" y="170" width="24" height="24" rx="4"/>
+  <text class="legend-key" x="1372" y="189">Platform</text>
+  <rect class="storage" x="1489" y="170" width="24" height="24" rx="4"/>
+  <text class="legend-key" x="1606" y="189" text-anchor="end">Storage</text>
+
+  <!-- ================= Ingestion: per-host cards, stacked to suggest many hosts ================= -->
+  <rect class="source" x="96" y="116" width="780" height="320" rx="10"/>
+  <rect class="source" x="88" y="108" width="780" height="320" rx="10"/>
+  <rect class="source" x="80" y="100" width="780" height="320" rx="10"/>
+  <text class="label" x="470" y="138">Per-Host Ingestion</text>
+
+  <!-- containers stacked in a column, each writing its own rotated log files -->
+  <rect class="glyph" x="130" y="180" width="44" height="44" rx="6"/>
+  <rect class="glyph" x="130" y="240" width="44" height="44" rx="6"/>
+  <rect class="glyph" x="130" y="300" width="44" height="44" rx="6"/>
+  <text class="sub" x="152" y="390">Containers</text>
+  <path class="edge" d="M 180 202 L 334 202"/>
+  <path class="edge" d="M 180 262 L 334 262"/>
+  <path class="edge" d="M 180 322 L 334 322"/>
+
+  <!-- rotated log files, a small stack per container -->
+  <rect class="glyph" x="352" y="192" width="36" height="44" rx="4"/>
+  <rect class="glyph" x="346" y="186" width="36" height="44" rx="4"/>
+  <rect class="glyph" x="340" y="180" width="36" height="44" rx="4"/>
+  <rect class="glyph" x="352" y="252" width="36" height="44" rx="4"/>
+  <rect class="glyph" x="346" y="246" width="36" height="44" rx="4"/>
+  <rect class="glyph" x="340" y="240" width="36" height="44" rx="4"/>
+  <rect class="glyph" x="352" y="312" width="36" height="44" rx="4"/>
+  <rect class="glyph" x="346" y="306" width="36" height="44" rx="4"/>
+  <rect class="glyph" x="340" y="300" width="36" height="44" rx="4"/>
+  <text class="sub" x="364" y="390">Rotated log files</text>
+
+  <!-- the collector picks up every file: the upper rows join the bottom row's line -->
+  <path d="M 394 202 L 460 202 M 394 262 L 460 262 M 460 202 L 460 322" fill="none" stroke="#30323a" stroke-width="2.5"/>
+  <path class="edge" d="M 394 322 L 520 322"/>
+
+  <!-- log collector (bottom right) writes KV-IR files (top right) -->
+  <rect class="platform" x="520" y="292" width="300" height="60" rx="8"/>
+  <text class="label-sm" x="670" y="329">Log Collector</text>
+  <path class="edge" d="M 670 292 L 670 254"/>
+  <rect class="service" x="536" y="172" width="300" height="60" rx="8"/>
+  <rect class="service" x="520" y="188" width="300" height="60" rx="8"/>
+  <text class="label-sm" x="670" y="225">KV-IR files</text>
+
+  <!-- Kafka, drawn as a pipe of messages on the collector's row; the earliest item sits at the right end -->
+  <text class="label" x="1280" y="278">Kafka</text>
+  <path d="M 980 292 L 1580 292 M 980 352 L 1580 352" fill="none" stroke="#2f6fb3" stroke-width="2.5"/>
+  <rect class="platform" x="1005" y="302" width="40" height="40" rx="6"/>
+  <rect class="platform" x="1061" y="302" width="40" height="40" rx="6"/>
+  <rect class="platform" x="1117" y="302" width="40" height="40" rx="6"/>
+  <rect class="platform" x="1173" y="302" width="40" height="40" rx="6"/>
+  <rect class="platform" x="1229" y="302" width="40" height="40" rx="6"/>
+  <rect class="platform" x="1285" y="302" width="40" height="40" rx="6"/>
+  <rect class="platform" x="1341" y="302" width="40" height="40" rx="6"/>
+  <text x="1408" y="332" fill="#2f6fb3" font-family="Trebuchet MS, Avenir Next, Arial, sans-serif" font-size="28" font-weight="700">...</text>
+  <rect class="platform" x="1480" y="302" width="40" height="40" rx="6"/>
+
+  <!-- ingestion edges: the collector uploads each snapshot to object storage and its metadata to Kafka -->
+  <path class="edge metadata" d="M 820 322 L 980 322"/>
+  <path class="edge" d="M 670 352 L 670 486"/>
+
+  <!-- ================= Shared stores and consolidation ================= -->
+
+  <!-- Object Storage, under the log collector -->
+  <path class="storage" d="M 520 510 L 545 630 a 125 20 0 0 0 250 0 L 820 510"/>
+  <ellipse class="storage" cx="670" cy="510" rx="150" ry="24"/>
+  <text class="label" x="670" y="570">Object Storage</text>
+  <text class="sub" x="670" y="600">
+    <tspan x="670" dy="0">Archives and</tspan>
+    <tspan x="670" dy="24">KV-IR snapshots</tspan>
+  </text>
+
+  <!-- Consolidation -->
+  <rect class="service" x="970" y="520" width="260" height="100" rx="8"/>
+  <text class="label-sm" x="1100" y="562">Consolidation</text>
+  <text class="sub" x="1100" y="594">KV-IR files into archives</text>
+
+  <!-- Metastore, under the head of the Kafka pipe -->
+  <path class="platform" d="M 1370 510 v 120 a 130 24 0 0 0 260 0 v -120"/>
+  <ellipse class="platform" cx="1500" cy="510" rx="130" ry="24"/>
+  <text class="label" x="1500" y="580">Metastore</text>
+  <text class="sub" x="1500" y="612">Per-file metadata</text>
+
+  <!-- Kafka head to metastore -->
+  <path class="edge metadata" d="M 1500 342 L 1500 486"/>
+
+  <!-- store edges -->
+  <path class="edge-both" d="M 820 570 L 970 570"/>
+  <path class="edge-both metadata" d="M 1230 570 L 1370 570"/>
+
+  <!-- ================= Search ================= -->
+
+  <!-- queries from engineers and agents, with Observability stacked beneath -->
+  <rect class="source" x="80" y="710" width="380" height="190" rx="10"/>
+  <text class="label" x="270" y="758">Queries From</text>
+  <text class="label" x="270" y="788">Engineers and Agents</text>
+  <circle class="person" cx="177" cy="826" r="16"/>
+  <rect class="person" x="160" y="849" width="34" height="20" rx="10"/>
+  <circle class="person" cx="239" cy="826" r="16"/>
+  <rect class="person" x="222" y="849" width="34" height="20" rx="10"/>
+  <rect class="person" x="282" y="810" width="34" height="32" rx="7"/>
+  <circle cx="293" cy="826" r="3.5" fill="#b7791f"/>
+  <circle cx="305" cy="826" r="3.5" fill="#b7791f"/>
+  <rect class="person" x="282" y="849" width="34" height="20" rx="4"/>
+  <rect class="person" x="344" y="810" width="34" height="32" rx="7"/>
+  <circle cx="355" cy="826" r="3.5" fill="#b7791f"/>
+  <circle cx="367" cy="826" r="3.5" fill="#b7791f"/>
+  <rect class="person" x="344" y="849" width="34" height="20" rx="4"/>
+
+  <path class="edge" d="M 270 900 L 270 948"/>
+
+  <rect class="platform" x="80" y="950" width="380" height="80" rx="8"/>
+  <text class="label" x="270" y="982">Observability</text>
+  <text class="sub" x="270" y="1012">Translates queries to SQL</text>
+
+  <!-- Presto cluster, right edge aligned with the metastore -->
+  <rect class="platform" x="520" y="710" width="1110" height="320" rx="10"/>
+  <text class="label" x="1075" y="756">Presto Cluster</text>
+  <rect class="service" x="565" y="784" width="1020" height="42" rx="21"/>
+  <text class="label-sm" x="1075" y="813">Presto CLP Connector</text>
+  <rect class="inner" x="975" y="862" width="200" height="44" rx="6"/>
+  <text class="inner-label" x="1075" y="891">Coordinator</text>
+  <path class="tree" d="M 1075 906 L 655 942 M 1075 906 L 865 942 M 1075 906 L 1075 942 M 1075 906 L 1285 942 M 1075 906 L 1495 942"/>
+  <rect class="inner" x="565" y="942" width="180" height="44" rx="6"/>
+  <text class="inner-label" x="655" y="971">Worker</text>
+  <rect class="inner" x="775" y="942" width="180" height="44" rx="6"/>
+  <text class="inner-label" x="865" y="971">Worker</text>
+  <rect class="inner" x="985" y="942" width="180" height="44" rx="6"/>
+  <text class="inner-label" x="1075" y="971">Worker</text>
+  <rect class="inner" x="1195" y="942" width="180" height="44" rx="6"/>
+  <text class="inner-label" x="1285" y="971">Worker</text>
+  <rect class="inner" x="1405" y="942" width="180" height="44" rx="6"/>
+  <text class="inner-label" x="1495" y="971">Worker</text>
+
+  <!-- search edges: users reach Presto through observability or directly -->
+  <path class="edge" d="M 460 815 L 520 815"/>
+  <path class="edge" d="M 460 990 L 520 990"/>
+  <path class="edge" d="M 670 784 L 670 650"/>
+  <path class="edge metadata" d="M 1500 784 L 1500 654"/>
+</svg>

@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 780" role="img" aria-labelledby="title description">
+  <title id="title">How the CLP connector optimizes a Presto query plan</title>
+  <desc id="description">A Presto query plan executes top to bottom: split generation, table scan, filter, aggregation, projection. The CLP connector optimizes two of those nodes. During split generation it applies top-level filtering, pruning files inside the metastore lookup, and TopN early termination, opening only the newest files needed to reach N. During table scan it applies CLP-native vectorized execution: table schema resolution, dictionary lookup, and vectorized materialization against the archives and KV-IR snapshots in object storage. Across a 30-day production window, all three tiers combined cut the data examined by more than 200,000 times.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#34343d"/>
+    </marker>
+    <pattern id="ruled-paper" patternUnits="userSpaceOnUse" width="1800" height="39">
+      <rect width="1800" height="39" fill="#fff8e8"/>
+      <path d="M 0 38.5 H 1800" stroke="#bad7e8" stroke-width="1.1" opacity="0.58"/>
+    </pattern>
+    <filter id="paper-grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="2" seed="11" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="gray-noise"/>
+      <feComponentTransfer in="gray-noise" result="faint-noise">
+        <feFuncA type="table" tableValues="0 0.055"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" in2="faint-noise" mode="multiply"/>
+    </filter>
+    <filter id="cut-paper-shadow" x="-12%" y="-15%" width="130%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018 0.055" numOctaves="1" seed="7" result="edge-noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="edge-noise" scale="0.6" xChannelSelector="R" yChannelSelector="G" result="rough-shape"/>
+      <feDropShadow in="rough-shape" dx="3.5" dy="4.5" stdDeviation="2.7" flood-color="#4a3828" flood-opacity="0.21"/>
+    </filter>
+    <style>
+      .col-title { fill: #25262b; font: 700 28px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; text-anchor: middle; }
+      .col-sub { fill: #555963; font: 20px "Trebuchet MS", "Avenir Next", Arial, sans-serif; text-anchor: middle; }
+      .source { fill: #e3effc; stroke: #2f6fb3; stroke-width: 2; }
+      .planning { fill: #eeeafd; stroke: #6d5bd0; stroke-width: 2; }
+      .external { fill: #f6f3ed; stroke: #8b95a1; stroke-width: 2; }
+      .plan-node { fill: #fffdf8; stroke: #7ea3d8; stroke-width: 1.5; }
+      .plan-num { fill: #2f6fb3; }
+      .plan-num-text { fill: #ffffff; font: 700 18px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; text-anchor: middle; }
+      .plan-label { fill: #25262b; font: 700 24px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; }
+      .panel { fill: #fffdf8; stroke: #9588dc; stroke-width: 1.5; }
+      .panel-title { fill: #25262b; font: 700 26px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; }
+      .panel-sub { fill: #555963; font: 26px "Trebuchet MS", "Avenir Next", Arial, sans-serif; }
+      .item { fill: #eeeafd; stroke: #b8affa; stroke-width: 1; }
+      .item-title { fill: #25262b; font: 700 22px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; }
+      .item-copy { fill: #30323a; font: 20px "Trebuchet MS", "Avenir Next", Arial, sans-serif; }
+      .store-service { fill: #e3effc; stroke: #2f6fb3; stroke-width: 2; }
+      .store-files { fill: #d7eee8; stroke: #2f8578; stroke-width: 2; }
+      .store-title { fill: #25262b; font: 600 26px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; text-anchor: middle; }
+      .store-copy { fill: #555963; font: 20px "Trebuchet MS", "Avenir Next", Arial, sans-serif; text-anchor: middle; }
+      .flow { fill: none; stroke: #34343d; stroke-width: 3; marker-end: url(#arrow); }
+      .flow-both { fill: none; stroke: #34343d; stroke-width: 3; marker-start: url(#arrow); marker-end: url(#arrow); }
+      .banner { fill: #d7eee8; stroke: #2f8578; stroke-width: 2; }
+      .banner-copy { fill: #25262b; font: 700 24px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; }
+      .metric { fill: #185f56; font: 700 34px "Trebuchet MS", "Avenir Next Rounded", Arial, sans-serif; }
+      .source, .planning, .external, .plan-node, .panel, .item, .store-service, .store-files, .banner {
+        filter: url(#cut-paper-shadow);
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .flow, .flow-both {
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1800" height="780" fill="url(#ruled-paper)" filter="url(#paper-grain)"/>
+  <path d="M 22 0 V 780" stroke="#dd7c75" stroke-width="2" opacity="0.58"/>
+  <path d="M 30 0 V 780" stroke="#dd7c75" stroke-width="1" opacity="0.34"/>
+
+  <!-- Column 1: query plan -->
+  <rect class="source" x="40" y="40" width="340" height="633" rx="12"/>
+  <text class="col-title" x="210" y="95">Query Plan</text>
+  <text class="col-sub" x="210" y="125">executed top to bottom</text>
+
+  <rect class="plan-node" x="80" y="165" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="197" r="16"/>
+  <text class="plan-num-text" x="115" y="203">1</text>
+  <text class="plan-label" x="145" y="205">Split Generation</text>
+
+  <path class="flow" d="M 210 229 L 210 270"/>
+
+  <rect class="plan-node" x="80" y="270" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="302" r="16"/>
+  <text class="plan-num-text" x="115" y="308">2</text>
+  <text class="plan-label" x="145" y="310">Table Scan</text>
+
+  <path class="flow" d="M 210 334 L 210 375"/>
+
+  <rect class="plan-node" x="80" y="375" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="407" r="16"/>
+  <text class="plan-num-text" x="115" y="413">3</text>
+  <text class="plan-label" x="145" y="415">Filter</text>
+
+  <path class="flow" d="M 210 439 L 210 480"/>
+
+  <rect class="plan-node" x="80" y="480" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="512" r="16"/>
+  <text class="plan-num-text" x="115" y="518">4</text>
+  <text class="plan-label" x="145" y="520">Aggregation</text>
+
+  <path class="flow" d="M 210 544 L 210 585"/>
+
+  <rect class="plan-node" x="80" y="585" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="617" r="16"/>
+  <text class="plan-num-text" x="115" y="623">5</text>
+  <text class="plan-label" x="145" y="625">Projection</text>
+
+  <!-- Column 2: connector optimizations -->
+  <rect class="planning" x="420" y="40" width="960" height="633" rx="12"/>
+  <text class="col-title" x="900" y="95">CLP Connector Optimizations</text>
+
+  <rect class="panel" x="450" y="130" width="900" height="207" rx="10"/>
+  <text x="480" y="172"><tspan class="panel-title">Split Generation:</tspan><tspan class="panel-sub" dx="8">Avoid opening files, using metastore metadata</tspan></text>
+
+  <rect class="item" x="480" y="190" width="840" height="56" rx="8"/>
+  <text x="500" y="225"><tspan class="item-title">Top-Level Filtering:</tspan><tspan class="item-copy" dx="8">Prune files inside the metastore lookup</tspan></text>
+
+  <rect class="item" x="480" y="261" width="840" height="56" rx="8"/>
+  <text x="500" y="296"><tspan class="item-title">TopN Early Termination:</tspan><tspan class="item-copy" dx="8">Open only the newest files needed to reach N</tspan></text>
+
+  <rect class="panel" x="450" y="365" width="900" height="284" rx="10"/>
+  <text x="480" y="407"><tspan class="panel-title">Table Scan:</tspan><tspan class="panel-sub" dx="8">CLP-native vectorized execution</tspan></text>
+
+  <rect class="item" x="480" y="425" width="840" height="56" rx="8"/>
+  <text x="500" y="460"><tspan class="item-title">CLP Table Schema Resolution:</tspan><tspan class="item-copy" dx="8">Skip tables that cannot match</tspan></text>
+
+  <rect class="item" x="480" y="496" width="840" height="56" rx="8"/>
+  <text x="500" y="531"><tspan class="item-title">Dictionary Lookup:</tspan><tspan class="item-copy" dx="8">Skip columns with no dictionary match</tspan></text>
+
+  <rect class="item" x="480" y="567" width="840" height="56" rx="8"/>
+  <text x="500" y="602"><tspan class="item-title">Vectorized Materialization:</tspan><tspan class="item-copy" dx="8">Read only needed columns into Velox vectors</tspan></text>
+
+  <!-- Column 3: external systems -->
+  <rect class="external" x="1420" y="40" width="340" height="633" rx="12"/>
+  <text class="col-title" x="1590" y="95">External Systems</text>
+
+  <path class="store-service" d="M 1460 178 v 110 a 130 22 0 0 0 260 0 v -110"/>
+  <ellipse class="store-service" cx="1590" cy="178" rx="130" ry="22"/>
+  <text class="store-title" x="1590" y="246">Metastore</text>
+  <text class="store-copy" x="1590" y="278">Per-file metadata</text>
+
+  <path class="store-files" d="M 1460 449 L 1482 559 a 108 20 0 0 0 216 0 L 1720 449"/>
+  <ellipse class="store-files" cx="1590" cy="449" rx="130" ry="22"/>
+  <text class="store-title" x="1590" y="505">Object Storage</text>
+  <text class="store-copy" x="1590" y="535">
+    <tspan x="1590" dy="0">Archives and</tspan>
+    <tspan x="1590" dy="24">KV-IR snapshots</tspan>
+  </text>
+
+  <!-- Cross-column arrows -->
+  <path class="flow-both" d="M 340 197 L 450 197"/>
+  <path class="flow-both" d="M 340 302 L 400 302 L 400 504 L 450 504"/>
+  <path class="flow-both" d="M 1350 233 L 1460 233"/>
+  <path class="flow-both" d="M 1350 504 L 1460 504"/>
+
+  <!-- Combined effect -->
+  <rect class="banner" x="40" y="693" width="1720" height="60" rx="10"/>
+  <text class="banner-copy" x="80" y="732">Across a 30-day production window, all three tiers combined</text>
+  <text class="metric" x="830" y="734">cut the data examined by more than 200,000×</text>
+</svg>
