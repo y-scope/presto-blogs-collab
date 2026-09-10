@@ -8,29 +8,29 @@
     </marker>
     <style>
       .col-title { fill: #25262b; font: 700 28px Arial, sans-serif; text-anchor: middle; }
-      .col-sub { fill: #555963; font: 17px Arial, sans-serif; text-anchor: middle; }
-      .source { fill: #fff1dc; stroke: #b7791f; stroke-width: 2.5; }
-      .planning { fill: #f4f2ff; stroke: #6d5bd0; stroke-width: 2.5; }
-      .external { fill: #effaf7; stroke: #2f8578; stroke-width: 2.5; }
-      .plan-node { fill: #ffffff; fill-opacity: 0.85; stroke: #d6a862; stroke-width: 1.5; }
+      .col-sub { fill: #555963; font: 20px Arial, sans-serif; text-anchor: middle; }
+      .source { fill: #ffefd6; stroke: #b7791f; stroke-width: 2; }
+      .planning { fill: #ece8ff; stroke: #6d5bd0; stroke-width: 2; }
+      .external { fill: #e3f4ef; stroke: #2f8578; stroke-width: 2; }
+      .plan-node { fill: #ffffff; stroke: #c9a35a; stroke-width: 1.5; }
       .plan-num { fill: #b7791f; }
-      .plan-num-text { fill: #ffffff; font: 700 16px Arial, sans-serif; text-anchor: middle; }
-      .plan-label { fill: #25262b; font: 700 21px Arial, sans-serif; }
-      .panel { fill: #ffffff; fill-opacity: 0.8; stroke: #9588dc; stroke-width: 1.5; }
-      .panel-title { fill: #25262b; font: 700 24px Arial, sans-serif; }
-      .panel-sub { fill: #555963; font: 18px Arial, sans-serif; }
-      .item { fill: #f4f2ff; stroke: #9588dc; stroke-width: 1.5; }
-      .item-title { fill: #25262b; font: 700 20px Arial, sans-serif; }
-      .item-copy { fill: #30323a; font: 18px Arial, sans-serif; }
+      .plan-num-text { fill: #ffffff; font: 700 18px Arial, sans-serif; text-anchor: middle; }
+      .plan-label { fill: #25262b; font: 700 24px Arial, sans-serif; }
+      .panel { fill: #ffffff; stroke: #9588dc; stroke-width: 1.5; }
+      .panel-title { fill: #25262b; font: 700 26px Arial, sans-serif; }
+      .panel-sub { fill: #555963; font: 26px Arial, sans-serif; }
+      .item { fill: #e6e1fb; stroke: #b8affa; stroke-width: 1; }
+      .item-title { fill: #25262b; font: 700 22px Arial, sans-serif; }
+      .item-copy { fill: #30323a; font: 20px Arial, sans-serif; }
       .store-service { fill: #f4f2ff; stroke: #6d5bd0; stroke-width: 2; }
       .store-files { fill: #dff3ee; stroke: #2f8578; stroke-width: 2; }
-      .store-title { fill: #25262b; font: 600 24px Arial, sans-serif; text-anchor: middle; }
-      .store-copy { fill: #555963; font: 17px Arial, sans-serif; text-anchor: middle; }
+      .store-title { fill: #25262b; font: 600 26px Arial, sans-serif; text-anchor: middle; }
+      .store-copy { fill: #555963; font: 20px Arial, sans-serif; text-anchor: middle; }
       .flow { fill: none; stroke: #30323a; stroke-width: 3; marker-end: url(#arrow); }
       .flow-both { fill: none; stroke: #30323a; stroke-width: 3; marker-start: url(#arrow); marker-end: url(#arrow); }
-      .banner { fill: #effaf7; stroke: #2f8578; stroke-width: 2.5; }
-      .banner-copy { fill: #25262b; font: 700 21px Arial, sans-serif; }
-      .metric { fill: #185f56; font: 700 32px Arial, sans-serif; }
+      .banner { fill: #cdeae2; stroke: #2f8578; stroke-width: 2; }
+      .banner-copy { fill: #25262b; font: 700 24px Arial, sans-serif; }
+      .metric { fill: #185f56; font: 700 34px Arial, sans-serif; }
     </style>
   </defs>
 
@@ -87,7 +87,7 @@
   <rect class="item" x="480" y="261" width="840" height="56" rx="8"/>
   <text x="500" y="296"><tspan class="item-title">TopN Early Termination:</tspan><tspan class="item-copy" dx="8">Open only the newest files needed to reach N</tspan></text>
 
-  <rect class="panel" x="450" y="365" width="900" height="278" rx="10"/>
+  <rect class="panel" x="450" y="365" width="900" height="284" rx="10"/>
   <text x="480" y="407"><tspan class="panel-title">Table Scan:</tspan><tspan class="panel-sub" dx="8">CLP-native vectorized execution</tspan></text>
 
   <rect class="item" x="480" y="425" width="840" height="56" rx="8"/>
@@ -97,7 +97,7 @@
   <text x="500" y="531"><tspan class="item-title">Dictionary Lookup:</tspan><tspan class="item-copy" dx="8">Skip columns with no dictionary match</tspan></text>
 
   <rect class="item" x="480" y="567" width="840" height="56" rx="8"/>
-  <text x="500" y="602"><tspan class="item-title">Vectorized Materialization:</tspan><tspan class="item-copy" dx="8">Read only the columns still needed into Velox vectors</tspan></text>
+  <text x="500" y="602"><tspan class="item-title">Vectorized Materialization:</tspan><tspan class="item-copy" dx="8">Read only needed columns into Velox vectors</tspan></text>
 
   <!-- Column 3: external systems -->
   <rect class="external" x="1420" y="40" width="340" height="633" rx="12"/>
@@ -122,5 +122,5 @@
   <!-- Combined effect -->
   <rect class="banner" x="40" y="693" width="1720" height="60" rx="10"/>
   <text class="banner-copy" x="80" y="732">Across a 30-day production window, all three tiers combined</text>
-  <text class="metric" x="720" y="734">cut the data examined by more than 200,000×</text>
+  <text class="metric" x="830" y="734">cut the data examined by more than 200,000×</text>
 </svg>

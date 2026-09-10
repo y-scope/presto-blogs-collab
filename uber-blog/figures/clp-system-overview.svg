@@ -18,14 +18,14 @@
       .queue { fill: none; stroke: #6d5bd0; stroke-width: 2; }
       .person { fill: #fff1dc; stroke: #b7791f; stroke-width: 2; }
       .label { fill: #25262b; font: 600 22px Arial, sans-serif; text-anchor: middle; }
-      .label-sm { fill: #25262b; font: 600 19px Arial, sans-serif; text-anchor: middle; }
-      .caption { fill: #555963; font: 18px Arial, sans-serif; text-anchor: middle; }
+      .label-sm { fill: #25262b; font: 600 21px Arial, sans-serif; text-anchor: middle; }
+      .caption { fill: #555963; font: 20px Arial, sans-serif; text-anchor: middle; }
       .edge { fill: none; stroke: #30323a; stroke-width: 2.5; marker-end: url(#arrow); }
       .edge-both { fill: none; stroke: #30323a; stroke-width: 2.5; marker-start: url(#arrow); marker-end: url(#arrow); }
       .metadata { stroke-dasharray: 8 7; }
       .tree { fill: none; stroke: #9588dc; stroke-width: 1.5; }
       .legend-line { fill: none; stroke: #30323a; stroke-width: 2.5; }
-      .legend-label { fill: #30323a; font: 19px Arial, sans-serif; }
+      .legend-label { fill: #30323a; font: 20px Arial, sans-serif; }
     </style>
   </defs>
 
