@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 930" role="img" aria-labelledby="title description">
+  <title id="title">How the CLP connector optimizes a Presto query plan</title>
+  <desc id="description">A Presto query plan executes top to bottom: split generation, table scan, filter, order by, projection. The CLP connector optimizes two of those nodes. During split generation it applies top-level filtering, pushing metadata predicates into the metastore lookup, and TopN early termination, using per-file event counts to open only the minimal recent subset. During table scan it applies CLP table schema resolution, dictionary lookup, and vectorized materialization against the archives and KV-IR files in object storage. Across a 30-day production window the combined effect was more than 200,000 times less data examined.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#30323a"/>
+    </marker>
+    <style>
+      .col-title { fill: #25262b; font: 700 28px Arial, sans-serif; text-anchor: middle; }
+      .col-sub { fill: #555963; font: 17px Arial, sans-serif; text-anchor: middle; }
+      .source { fill: #fff1dc; stroke: #b7791f; stroke-width: 2.5; }
+      .planning { fill: #f4f2ff; stroke: #6d5bd0; stroke-width: 2.5; }
+      .external { fill: #effaf7; stroke: #2f8578; stroke-width: 2.5; }
+      .plan-node { fill: #ffffff; fill-opacity: 0.85; stroke: #d6a862; stroke-width: 1.5; }
+      .plan-num { fill: #b7791f; }
+      .plan-num-text { fill: #ffffff; font: 700 16px Arial, sans-serif; text-anchor: middle; }
+      .plan-label { fill: #25262b; font: 700 21px Arial, sans-serif; }
+      .panel { fill: #ffffff; fill-opacity: 0.8; stroke: #9588dc; stroke-width: 1.5; }
+      .panel-title { fill: #25262b; font: 700 24px Arial, sans-serif; }
+      .panel-sub { fill: #555963; font: 17px Arial, sans-serif; }
+      .item { fill: #f4f2ff; stroke: #9588dc; stroke-width: 1.5; }
+      .item-title { fill: #25262b; font: 700 20px Arial, sans-serif; }
+      .item-copy { fill: #30323a; font: 17px Arial, sans-serif; }
+      .store-service { fill: #f4f2ff; stroke: #6d5bd0; stroke-width: 2; }
+      .store-files { fill: #dff3ee; stroke: #2f8578; stroke-width: 2; }
+      .store-title { fill: #25262b; font: 600 24px Arial, sans-serif; text-anchor: middle; }
+      .store-copy { fill: #555963; font: 17px Arial, sans-serif; text-anchor: middle; }
+      .flow { fill: none; stroke: #30323a; stroke-width: 3; marker-end: url(#arrow); }
+      .flow-both { fill: none; stroke: #30323a; stroke-width: 3; marker-start: url(#arrow); marker-end: url(#arrow); }
+      .banner { fill: #effaf7; stroke: #2f8578; stroke-width: 2.5; }
+      .banner-copy { fill: #25262b; font: 700 21px Arial, sans-serif; }
+      .metric { fill: #185f56; font: 700 32px Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1800" height="930" fill="#ffffff"/>
+
+  <!-- Column 1: query plan -->
+  <rect class="source" x="40" y="40" width="340" height="790" rx="12"/>
+  <text class="col-title" x="210" y="95">Query plan</text>
+  <text class="col-sub" x="210" y="125">executed top to bottom</text>
+
+  <rect class="plan-node" x="80" y="165" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="197" r="16"/>
+  <text class="plan-num-text" x="115" y="203">1</text>
+  <text class="plan-label" x="145" y="205">Split generation</text>
+
+  <path class="flow" d="M 210 229 L 210 290"/>
+
+  <rect class="plan-node" x="80" y="290" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="322" r="16"/>
+  <text class="plan-num-text" x="115" y="328">2</text>
+  <text class="plan-label" x="145" y="330">Table scan</text>
+
+  <path class="flow" d="M 210 354 L 210 415"/>
+
+  <rect class="plan-node" x="80" y="415" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="447" r="16"/>
+  <text class="plan-num-text" x="115" y="453">3</text>
+  <text class="plan-label" x="145" y="455">Filter</text>
+
+  <path class="flow" d="M 210 479 L 210 540"/>
+
+  <rect class="plan-node" x="80" y="540" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="572" r="16"/>
+  <text class="plan-num-text" x="115" y="578">4</text>
+  <text class="plan-label" x="145" y="580">OrderBy</text>
+
+  <path class="flow" d="M 210 604 L 210 665"/>
+
+  <rect class="plan-node" x="80" y="665" width="260" height="64" rx="8"/>
+  <circle class="plan-num" cx="115" cy="697" r="16"/>
+  <text class="plan-num-text" x="115" y="703">5</text>
+  <text class="plan-label" x="145" y="705">Projection</text>
+
+  <!-- Column 2: connector optimizations -->
+  <rect class="planning" x="420" y="40" width="960" height="790" rx="12"/>
+  <text class="col-title" x="900" y="95">CLP connector optimizations</text>
+
+  <rect class="panel" x="450" y="130" width="900" height="290" rx="10"/>
+  <text class="panel-title" x="480" y="170">Split generation</text>
+  <text class="panel-sub" x="480" y="196">Metastore-driven split selection and pruning</text>
+
+  <rect class="item" x="480" y="215" width="840" height="85" rx="8"/>
+  <text class="item-title" x="500" y="245">Top-level filtering</text>
+  <text class="item-copy" x="500" y="275">Push metadata predicates into the metastore lookup so candidates are filtered before scan.</text>
+
+  <rect class="item" x="480" y="315" width="840" height="85" rx="8"/>
+  <text class="item-title" x="500" y="345">TopN early termination</text>
+  <text class="item-copy" x="500" y="375">Use per-file event counts to open only the minimal recent subset needed for N events.</text>
+
+  <rect class="panel" x="450" y="445" width="900" height="365" rx="10"/>
+  <text class="panel-title" x="480" y="485">Table scan</text>
+  <text class="panel-sub" x="480" y="511">CLP-native scanning and vectorized materialization</text>
+
+  <rect class="item" x="480" y="530" width="840" height="80" rx="8"/>
+  <text class="item-title" x="500" y="560">CLP table schema resolution</text>
+  <text class="item-copy" x="500" y="588">Skip tables whose schema cannot satisfy the query.</text>
+
+  <rect class="item" x="480" y="620" width="840" height="80" rx="8"/>
+  <text class="item-title" x="500" y="650">Dictionary lookup</text>
+  <text class="item-copy" x="500" y="678">Check logtype and variable dictionaries first, and skip columns with no match.</text>
+
+  <rect class="item" x="480" y="710" width="840" height="80" rx="8"/>
+  <text class="item-title" x="500" y="740">Vectorized materialization</text>
+  <text class="item-copy" x="500" y="768">Emit the fields still needed for unpushed filters, aggregation, and projection as Velox vectors.</text>
+
+  <!-- Column 3: external systems -->
+  <rect class="external" x="1420" y="40" width="340" height="790" rx="12"/>
+  <text class="col-title" x="1590" y="95">External systems</text>
+
+  <path class="store-service" d="M 1490 190 v 110 a 100 22 0 0 0 200 0 v -110"/>
+  <ellipse class="store-service" cx="1590" cy="190" rx="100" ry="22"/>
+  <text class="store-title" x="1590" y="262">Metastore</text>
+  <text class="store-copy" x="1590" y="352">
+    <tspan x="1590" dy="0">File paths, field-value</tspan>
+    <tspan x="1590" dy="24">mappings, event counts</tspan>
+  </text>
+
+  <path class="store-files" d="M 1490 560 v 110 a 100 22 0 0 0 200 0 v -110"/>
+  <ellipse class="store-files" cx="1590" cy="560" rx="100" ry="22"/>
+  <text class="store-title" x="1590" y="632">Object storage</text>
+  <text class="store-copy" x="1590" y="722">
+    <tspan x="1590" dy="0">CLP archives and</tspan>
+    <tspan x="1590" dy="24">KV-IR snapshots</tspan>
+  </text>
+
+  <!-- Cross-column arrows -->
+  <path class="flow-both" d="M 340 197 L 450 197"/>
+  <path class="flow-both" d="M 340 322 L 400 322 L 400 627 L 450 627"/>
+  <path class="flow-both" d="M 1350 260 L 1490 260"/>
+  <path class="flow-both" d="M 1350 627 L 1490 627"/>
+
+  <!-- Combined effect -->
+  <rect class="banner" x="40" y="850" width="1720" height="60" rx="10"/>
+  <text class="banner-copy" x="80" y="889">Combined effect over a 30-day production window:</text>
+  <text class="metric" x="640" y="891">more than 200,000× less data examined</text>
+</svg>

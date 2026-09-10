@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1010" role="img" aria-labelledby="title description">
+  <title id="title">Uber's CLP logging infrastructure: ingestion and search paths</title>
+  <desc id="description">Ingestion: on every host, containers emit logs to a log collector. The collector encodes them into KV-IR, which is uploaded to object storage, and publishes file metadata to Kafka, from which it is persisted into the metastore. Between the two paths, a consolidation service selects closed KV-IR files through the metastore and writes immutable CLP archives to object storage. Search: engineers and agents ask questions through the observability stack, which sends SQL to Presto. The CLP connector inside Presto prunes files using the metastore and scans the selected files from object storage.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#30323a"/>
+    </marker>
+    <style>
+      .panel { fill: #fbfaf7; stroke: #b9bcc6; stroke-width: 1.5; }
+      .panel-title { fill: #25262b; font: 700 26px Arial, sans-serif; }
+      .divider { fill: none; stroke: #b9bcc6; stroke-width: 1.5; stroke-dasharray: 5 6; }
+      .node { fill: #f4f2ff; stroke: #6d5bd0; stroke-width: 2; rx: 8; }
+      .source { fill: #fff1dc; stroke: #b7791f; }
+      .storage { fill: #dff3ee; stroke: #2f8578; }
+      .glyph { fill: #ffffff; stroke: #b7791f; stroke-width: 2; rx: 6; }
+      .glyph-service { fill: #ffffff; stroke: #9588dc; stroke-width: 1.5; rx: 5; }
+      .queue { fill: none; stroke: #6d5bd0; stroke-width: 2; }
+      .person { fill: #fff1dc; stroke: #b7791f; stroke-width: 2; }
+      .label { fill: #25262b; font: 600 22px Arial, sans-serif; text-anchor: middle; }
+      .label-sm { fill: #25262b; font: 600 19px Arial, sans-serif; text-anchor: middle; }
+      .caption { fill: #555963; font: 18px Arial, sans-serif; text-anchor: middle; }
+      .edge { fill: none; stroke: #30323a; stroke-width: 2.5; marker-end: url(#arrow); }
+      .edge-both { fill: none; stroke: #30323a; stroke-width: 2.5; marker-start: url(#arrow); marker-end: url(#arrow); }
+      .metadata { stroke-dasharray: 8 7; }
+      .tree { fill: none; stroke: #9588dc; stroke-width: 1.5; }
+      .legend-line { fill: none; stroke: #30323a; stroke-width: 2.5; }
+      .legend-label { fill: #30323a; font: 19px Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1010" fill="#ffffff"/>
+
+  <!-- ================= Ingestion panel ================= -->
+  <rect class="panel" x="40" y="40" width="1520" height="400" rx="16"/>
+  <text class="panel-title" x="70" y="82">Ingestion</text>
+
+  <!-- per-host stack -->
+  <rect class="node source" x="104" y="106" width="300" height="230"/>
+  <rect class="node source" x="92" y="118" width="300" height="230"/>
+  <rect class="node source" x="80" y="130" width="300" height="230"/>
+  <rect class="glyph" x="120" y="160" width="50" height="50"/>
+  <rect class="glyph" x="190" y="160" width="50" height="50"/>
+  <rect class="glyph" x="260" y="160" width="50" height="50"/>
+  <text class="caption" x="230" y="240">containers</text>
+  <path class="edge" d="M 230 250 L 230 275"/>
+  <rect class="node" x="110" y="280" width="240" height="55"/>
+  <text class="label-sm" x="230" y="314">log collector</text>
+  <text class="caption" x="230" y="392">per host</text>
+
+  <path class="divider" d="M 440 110 L 440 400"/>
+
+  <!-- KV-IR -->
+  <rect class="node" x="520" y="150" width="200" height="70"/>
+  <text class="label" x="620" y="193">KV-IR</text>
+
+  <!-- Kafka queue -->
+  <text class="label-sm" x="640" y="247">Kafka</text>
+  <path class="queue" d="M 520 262 L 760 262 M 520 328 L 760 328"/>
+  <rect class="glyph-service" x="540" y="278" width="36" height="36"/>
+  <rect class="glyph-service" x="596" y="278" width="36" height="36"/>
+  <rect class="glyph-service" x="652" y="278" width="36" height="36"/>
+  <rect class="glyph-service" x="708" y="278" width="36" height="36"/>
+
+  <!-- ingestion edges -->
+  <path class="edge" d="M 380 185 L 520 185"/>
+  <path class="edge metadata" d="M 350 307 L 520 307"/>
+  <path class="edge metadata" d="M 760 295 L 900 295 L 900 498"/>
+  <path class="edge" d="M 720 185 L 1400 185 L 1400 498"/>
+
+  <!-- ================= Shared tier ================= -->
+  <path class="node" d="M 810 520 v 80 a 90 22 0 0 0 180 0 v -80"/>
+  <ellipse class="node" cx="900" cy="520" rx="90" ry="22"/>
+  <text class="label" x="900" y="572">metastore</text>
+
+  <rect class="node" x="1050" y="525" width="200" height="70"/>
+  <text class="label-sm" x="1150" y="567">consolidation</text>
+
+  <path class="node storage" d="M 1310 520 v 80 a 90 22 0 0 0 180 0 v -80"/>
+  <ellipse class="node storage" cx="1400" cy="520" rx="90" ry="22"/>
+  <text class="label" x="1400" y="572">object storage</text>
+
+  <path class="edge-both metadata" d="M 990 560 L 1050 560"/>
+  <path class="edge" d="M 1250 560 L 1310 560"/>
+
+  <!-- ================= Search panel ================= -->
+  <rect class="panel" x="40" y="660" width="1520" height="300" rx="16"/>
+  <text class="panel-title" x="70" y="702">Search</text>
+
+  <!-- users and agent -->
+  <circle class="person" cx="120" cy="748" r="14"/>
+  <path class="person" d="M 98 795 a 22 22 0 0 1 44 0 z"/>
+  <circle class="person" cx="190" cy="748" r="14"/>
+  <path class="person" d="M 168 795 a 22 22 0 0 1 44 0 z"/>
+  <rect class="person" x="240" y="736" width="40" height="34" rx="6"/>
+  <circle cx="252" cy="752" r="4" fill="#b7791f"/>
+  <circle cx="268" cy="752" r="4" fill="#b7791f"/>
+  <rect class="person" x="246" y="776" width="28" height="19" rx="4"/>
+  <path class="edge" d="M 190 810 L 190 845"/>
+  <rect class="node" x="80" y="845" width="260" height="60"/>
+  <text class="label-sm" x="210" y="883">observability</text>
+
+  <path class="divider" d="M 440 690 L 440 940"/>
+
+  <!-- Presto -->
+  <rect class="node" x="520" y="760" width="380" height="170"/>
+  <text class="label" x="710" y="792">Presto</text>
+  <rect class="glyph-service" x="660" y="805" width="100" height="36"/>
+  <path class="tree" d="M 710 841 L 595 870 M 710 841 L 695 870 M 710 841 L 795 870"/>
+  <rect class="glyph-service" x="545" y="870" width="100" height="40"/>
+  <rect class="glyph-service" x="645" y="870" width="100" height="40"/>
+  <rect class="glyph-service" x="745" y="870" width="100" height="40"/>
+
+  <!-- connector, overlapping Presto's edge -->
+  <rect class="node" x="860" y="810" width="220" height="70"/>
+  <text class="label-sm" x="970" y="852">CLP connector</text>
+
+  <!-- search edges -->
+  <path class="edge" d="M 340 875 L 520 875"/>
+  <path class="edge metadata" d="M 930 810 L 930 622"/>
+  <path class="edge" d="M 1080 845 L 1400 845 L 1400 622"/>
+
+  <!-- legend -->
+  <path class="legend-line" d="M 1180 990 L 1230 990"/>
+  <text class="legend-label" x="1242" y="997">log data</text>
+  <path class="legend-line metadata" d="M 1370 990 L 1420 990"/>
+  <text class="legend-label" x="1432" y="997">metadata</text>
+</svg>
