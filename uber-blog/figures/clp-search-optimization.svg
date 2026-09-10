@@ -9,11 +9,11 @@
     <style>
       .col-title { fill: #25262b; font: 700 28px Arial, sans-serif; text-anchor: middle; }
       .col-sub { fill: #555963; font: 20px Arial, sans-serif; text-anchor: middle; }
-      .source { fill: #ffefd6; stroke: #b7791f; stroke-width: 2; }
+      .source { fill: #dbe9fb; stroke: #2f6fb3; stroke-width: 2; }
       .planning { fill: #ece8ff; stroke: #6d5bd0; stroke-width: 2; }
       .external { fill: #f0f1f4; stroke: #8b95a1; stroke-width: 2; }
-      .plan-node { fill: #ffffff; stroke: #c9a35a; stroke-width: 1.5; }
-      .plan-num { fill: #b7791f; }
+      .plan-node { fill: #ffffff; stroke: #7ea3d8; stroke-width: 1.5; }
+      .plan-num { fill: #2f6fb3; }
       .plan-num-text { fill: #ffffff; font: 700 18px Arial, sans-serif; text-anchor: middle; }
       .plan-label { fill: #25262b; font: 700 24px Arial, sans-serif; }
       .panel { fill: #ffffff; stroke: #9588dc; stroke-width: 1.5; }
@@ -22,7 +22,7 @@
       .item { fill: #e6e1fb; stroke: #b8affa; stroke-width: 1; }
       .item-title { fill: #25262b; font: 700 22px Arial, sans-serif; }
       .item-copy { fill: #30323a; font: 20px Arial, sans-serif; }
-      .store-service { fill: #f4f2ff; stroke: #6d5bd0; stroke-width: 2; }
+      .store-service { fill: #dbe9fb; stroke: #2f6fb3; stroke-width: 2; }
       .store-files { fill: #c7e8df; stroke: #2f8578; stroke-width: 2; }
       .store-title { fill: #25262b; font: 600 26px Arial, sans-serif; text-anchor: middle; }
       .store-copy { fill: #555963; font: 20px Arial, sans-serif; text-anchor: middle; }
@@ -105,13 +105,16 @@
 
   <path class="store-service" d="M 1460 178 v 110 a 130 22 0 0 0 260 0 v -110"/>
   <ellipse class="store-service" cx="1590" cy="178" rx="130" ry="22"/>
-  <text class="store-title" x="1590" y="250">Metastore</text>
-  <text class="store-copy" x="1590" y="340">Per-file metadata</text>
+  <text class="store-title" x="1590" y="246">Metastore</text>
+  <text class="store-copy" x="1590" y="278">Per-file metadata</text>
 
   <path class="store-files" d="M 1460 449 L 1482 559 a 108 20 0 0 0 216 0 L 1720 449"/>
   <ellipse class="store-files" cx="1590" cy="449" rx="130" ry="22"/>
-  <text class="store-title" x="1590" y="521">Object Storage</text>
-  <text class="store-copy" x="1590" y="611">Archives and KV-IR snapshots</text>
+  <text class="store-title" x="1590" y="505">Object Storage</text>
+  <text class="store-copy" x="1590" y="535">
+    <tspan x="1590" dy="0">Archives and</tspan>
+    <tspan x="1590" dy="24">KV-IR snapshots</tspan>
+  </text>
 
   <!-- Cross-column arrows -->
   <path class="flow-both" d="M 340 197 L 450 197"/>

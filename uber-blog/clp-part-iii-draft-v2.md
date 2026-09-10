@@ -42,7 +42,7 @@ Figure 1 shows the architecture of Uber's logging infrastructure and the life cy
 
 ![Uber's CLP logging infrastructure showing the ingestion and search paths sharing a metastore and object storage](figures/clp-system-overview.svg)
 
-**Figure 1: System overview of Uber's logging infrastructure**
+*Figure 1: System overview of Uber's logging infrastructure*
 
 ### Ingestion
 
@@ -84,7 +84,7 @@ Our CLP connector intervenes in those first two steps. During split generation i
 
 ![CLP connector optimizations mapped onto the Presto query plan](figures/clp-search-optimization.svg)
 
-**Figure 2: CLP connector optimizations in the Presto query plan**
+*Figure 2: CLP connector optimizations in the Presto query plan*
 
 #### Top-Level Filtering
 
