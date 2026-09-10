@@ -11,7 +11,7 @@
       .col-sub { fill: #555963; font: 20px Arial, sans-serif; text-anchor: middle; }
       .source { fill: #ffefd6; stroke: #b7791f; stroke-width: 2; }
       .planning { fill: #ece8ff; stroke: #6d5bd0; stroke-width: 2; }
-      .external { fill: #e3f4ef; stroke: #2f8578; stroke-width: 2; }
+      .external { fill: #f0f1f4; stroke: #8b95a1; stroke-width: 2; }
       .plan-node { fill: #ffffff; stroke: #c9a35a; stroke-width: 1.5; }
       .plan-num { fill: #b7791f; }
       .plan-num-text { fill: #ffffff; font: 700 18px Arial, sans-serif; text-anchor: middle; }
@@ -23,7 +23,7 @@
       .item-title { fill: #25262b; font: 700 22px Arial, sans-serif; }
       .item-copy { fill: #30323a; font: 20px Arial, sans-serif; }
       .store-service { fill: #f4f2ff; stroke: #6d5bd0; stroke-width: 2; }
-      .store-files { fill: #dff3ee; stroke: #2f8578; stroke-width: 2; }
+      .store-files { fill: #c7e8df; stroke: #2f8578; stroke-width: 2; }
       .store-title { fill: #25262b; font: 600 26px Arial, sans-serif; text-anchor: middle; }
       .store-copy { fill: #555963; font: 20px Arial, sans-serif; text-anchor: middle; }
       .flow { fill: none; stroke: #30323a; stroke-width: 3; marker-end: url(#arrow); }
