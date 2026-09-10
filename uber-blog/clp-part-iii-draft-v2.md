@@ -66,67 +66,65 @@ Presto parses the query into a query plan, the sequence of steps it will execute
 
 ## Implementation Details
 
-Next, we explain the implementation details behind the optimizations on both paths.
+The optimizations below follow the two paths from the system overview: ingestion first, then search.
 
 ### Ingestion Optimization
 
-**Near real-time query freshness:** Once the metastore receives a snapshot's metadata update, its new events are immediately queryable. End to end, from an event being written to it being searchable, that typically takes 30 seconds to a few minutes. Publishing at an interval or by policy keeps each collector's update rate low, but across hundreds of thousands of containers it still adds up to thousands of metadata updates per second at peak. Our metastore sustains more than 10,000 `UPSERT` operations per second per table using MySQL's `INSERT ... ON DUPLICATE KEY UPDATE`, leaving ample headroom above the observed peak load.
+#### Near real-time query freshness
 
-**Metadata- and policy-guided consolidation:** Closed KV-IR files are considered immutable but remain queryable, so consolidation does not need to begin immediately. A planner waits for a useful batch, then groups related files using file metadata and a pluggable, table-specific policy that can be tuned with domain knowledge about how each workload is queried. A policy might group logs from the same service within a shared time window, keeping similar schemas and recurring text together, or group logs from different layers of a stack that are commonly queried together, reducing the number of archives a query has to open. Workers build the archives asynchronously, outside the ingestion and query paths. This improves compression and search locality without delaying access to the logs.
+Once the metastore receives a snapshot's metadata update, its new events are immediately queryable. End to end, from an event being written to it being searchable, that typically takes 30 seconds to a few minutes. Publishing at an interval or by policy keeps each collector's update rate low, but across hundreds of thousands of containers it still adds up to thousands of metadata updates per second at peak. Our metastore sustains more than 10,000 `UPSERT` operations per second per table using MySQL's `INSERT ... ON DUPLICATE KEY UPDATE`, leaving ample headroom above the observed peak load.
+
+#### Metadata- and policy-guided consolidation
+
+Closed KV-IR files are considered immutable but remain queryable, so consolidation does not need to begin immediately. A planner waits for a useful batch, then groups related files using file metadata and a pluggable, table-specific policy that can be tuned with domain knowledge about how each workload is queried. A policy might group logs from the same service within a shared time window, keeping similar schemas and recurring text together, or group logs from different layers of a stack that are commonly queried together, reducing the number of archives a query has to open. Workers build the archives asynchronously, outside the ingestion and query paths. This improves compression and search locality without delaying access to the logs.
 
 ### Search Optimization
 
-To avoid overwhelming Presto with unneeded data, we introduced three tiers optimizations , applied layer after layer, guided by a single principle: prune the data scanned by the CLP connector and offload work for Presto.
+Recall that Presto turns a query into a plan, a sequence of steps executed top to bottom. For a typical log query, those steps are split generation, table scan, filter, order-by, and projection. Split generation decides which files to read and packages them as splits, the units of work handed to workers. Table scan reads those splits, and the remaining steps operate on the rows that come back. Split generation runs on the Presto coordinator, while table scan runs on the workers, and the coordinator also decides what the workers will do: which predicates to push down and which fields to read for the filters, aggregations, joins, and projections still to come. This is why the connector needs a foothold on both sides.
+
+Our CLP connector intervenes in those first two steps. During split generation it applies two tiers of optimization, top-level filtering and TopN early termination, that use metastore metadata to avoid opening files at all. During table scan it applies a third, CLP-native vectorized execution, to read as little as possible from each file it does open. All three follow one principle: prune the data the connector scans and offload work from Presto. Figure 2 shows where each sits in the plan.
+
+![CLP connector optimizations mapped onto the Presto query plan](figures/clp-search-optimization.svg)
+
+**Figure 2: CLP connector optimizations in the Presto query plan**
 
 #### Top-level filtering
 
-When a SQL predicate matches metadata registered in the metastore during ingestion (such as timestamp or service field), the connector pushes the predicate down ~~to the `TableScan` node~~. Rather than fetching all candidate IRs and archives from the metastore and defer the filtering to Presto, it appends these pushed-down predicates directly to the metastore lookup query. As a result, the CLP connector receives file candidate listings that are already filtered at the file level.
+When a SQL predicate matches metadata registered in the metastore during ingestion, such as a timestamp or service field, the connector pushes the predicate down. Rather than fetching all candidate KV-IR files and archives from the metastore and deferring the filtering to Presto, it appends these pushed-down predicates directly to the metastore lookup query. As a result, the connector receives a candidate list that is already filtered at the file level.
 
 #### TopN early termination
 
-Investigative queries are predominantly of the form "find the N most recent matching events." Without knowing how many log events an IR file or archive contains before opening it up, the CLP connector must conservatively scan all matching candidates to avoid returning fewer than N results. The key to bypassing this scan again lies in the metastore: during the ingestion, the log collector tracks the exact event count per file and emits  it along with the metadata update. When a query requests the N most recent events, the CLP connector retrieves this count, orders candidate IR files and archives by time, and opens only the minimal subset that is sufficient enough to yield N events. Terminating the moment the count reaches N isn't quite enough on its own though, since an unopened file can still hold a newer match if its time range overlaps the files already counted.
+Investigative queries are predominantly of the form "find the N most recent matching events." Without knowing how many events a KV-IR file or archive contains before opening it, the connector must conservatively scan every matching candidate to avoid returning fewer than N results. The key, again, lies in the metastore: during ingestion, the log collector tracks the exact event count per file and emits it with each metadata update. When a query asks for the N most recent events, the connector retrieves these counts, orders the candidates newest first, and opens only the minimal subset sufficient to yield N events. Stopping the moment the count reaches N yields only an approximation, since an unopened file can still hold a newer match if its time range overlaps the files already counted, so some results may be missing. For an exact answer, the connector keeps going until no remaining file can be newer than the N it has found.
 
-#### CLP-Native vectorized execution
+#### CLP-native vectorized execution
 
-CLP table schema resolution: CLP partitions log events that share the same schema into their own table within an archive. During schema resolution, CLP matches the structure implied by a query against each table's schema and keeps only the tables that could contain a match. For example, if a query filters on `zone`, any table whose schema contains no `zone` field cannot hold a match and is skipped without any scan.
+Once a split is open, CLP itself narrows the work in three steps.
 
-**Dictionary lookup:** This applies specifically to logtypes and their variables, not every column: each is stored once in a dictionary with an ID. Checking that dictionary first means a column with no match is skipped before any row is scanned, and it means a query can match on the pattern, a specific variable, or both, instead of needing to compare the whole string.
+**CLP table schema resolution:** CLP partitions log events that share the same schema into their own table within an archive. During schema resolution, CLP matches the structure implied by a query against each table's schema and keeps only the tables that could contain a match. For example, if a query filters on `zone`, any table whose schema contains no `zone` field cannot hold a match and is skipped without any scan.
 
-**Vectorized Materialization:** Materialization happens last: only the projected columns are read, only at the matching rows, filled directly into Velox vectors since CLP's storage is already columnar.
+**Dictionary lookup:** This applies specifically to logtypes and their variables, not every column: each is stored once in a dictionary with an ID. Checking that dictionary first means a column with no match is skipped before any row is scanned, and a query can match on the pattern, a specific variable, or both, instead of needing to compare the whole string.
 
-#### Effectiveness of the optimizations
+**Vectorized materialization:** Materialization happens last. At the matching rows only, the connector reads whatever columns downstream steps still need: the final projection, the inputs to any aggregation or join, and the columns behind filters that could not be pushed down. It fills them directly into Velox vectors, since CLP's storage is already columnar.
 
-Across a 30-day production window, these three layers reduced the amount of data that needed to be examined by more than 200,000×. This reflects the combined effect of all three layers, not any one optimization alone.
+## Results So Far
 
-## Result So Far:
+Stored in CLP, the roughly 25 PB of logs Uber produces each month occupies 750–850 TB in object storage, about 97% less.
 
-With the optimizations discussed above, using a 5-node Presto cluster, we are servicing hundreds of user per week, handling over thousands of query per day, achieving an average response time of 2 seconds (p99 of 26 seconds).
+Across a 30-day production window, the three search optimization tiers reduced the amount of data that needed to be examined by more than 200,000×, the combined effect of all three rather than any one alone. That reduction is why a five-node Presto cluster, reading directly from object storage with no cache, serves hundreds of weekly active users (WAU) and completes thousands of successful queries per day, with a mean response time of roughly two seconds and 99% completing within 26 seconds. The workers typically sit at 5–10% CPU and memory, and the architecture’s lightweight design keeps operational overhead low, requiring only a few engineers to maintain the entire infrastructure.
 
-Furthermore, the architecture’s lightweight design keeps operational overhead low, requiring only a few engineers to maintain the entire infrastructure.
+## Conclusion and What Comes Next: Beyond Guesswork for Agents
 
-## What Comes Next: Beyond Guesswork for Agents
+Adding SQL syntax was not the hard part. The hard part was keeping petabytes of evolving logs fresh, compact, and queryable while preventing most of that data from ever becoming query work. KV-IR, consolidation, the metastore, CLP's own structure, and a plugin path for the connector each remove a piece of that work, and the numbers above are what is left. The same structure that makes queries cheap is also what comes next.
 
-Agents already issue more than half of CLP queries at Uber for root cause analysis, behavior analytics, and exploratory debugging. The CLP-native filtering layer uses metadata about observed field paths, value types, and recurring message formats to narrow each scan. The same metadata can also help agents understand unfamiliar data before deciding which events to retrieve.
+Agents already issue more than half of CLP queries at Uber, and they start at a disadvantage. A fixed-schema table has a known list of columns. Evolving logs do not, so agents guess field names and cast wide nets such as `message LIKE '%failed%' OR message LIKE '%error%'`. Narrow guesses miss, and broad ones bury. What an agent needs is an inventory of the slice in front of it: which fields exist, which message formats occur, and how often. CLP already has that inventory in its compressed representation: the schema tree of field paths and types, and the logtype and variable dictionaries the third tier uses to narrow each scan, each stored once and linked to its source events.
 
-A fixed-schema table has a known list of columns and types. Evolving semi-structured logs do not. Their available fields depend on the selected applications, versions, time range, and other filters. Agents often compensate by guessing field names and combining broad conditions such as `message LIKE '%failed%' OR message LIKE '%exception%' OR message LIKE '%error%'`. Narrow guesses can miss relevant events, while broad searches can bury them in irrelevant results.
+Three questions cover that inventory, and we are refining a SQL function for each:
 
-CLP can provide this context without a separate index, because the required metadata is part of its compressed representation. Recurring message formats are stored separately from their changing, typed variables, while both remain linked to the exact source events.
+- `SCHEMA('message')` answers **"What fields are available?"** by returning the paths and value types below a field, so the agent can pick a relevant one such as `message.content[*].content`.
+- `PATTERN('message.content[*].content')` answers **"What happened, and how often?"** by exposing message formats that SQL can group and count.
+- `SEMANTIC('message.content[*].content', 'native connector load failure')` answers **"Which formats are relevant?"** by matching meaning rather than exact wording.
 
-Before retrieving raw events, an agent may need to answer three questions about the data remaining after initial filtering: Which fields are present? Which message formats appear, and how often? Which of those formats describe the problem it is trying to solve? We are refining a SQL function for each question.
-
-- `SCHEMA('message')` answers **"What fields are available?"** In datasets such as coding-agent session logs, `message` can be a nested object. The function returns the paths and value types below it. Using the question and, if needed, documentation or source code, the agent can select a relevant field such as `message.content[*].content`.
-- `PATTERN('message.content[*].content')` answers **"What happened, and how often?"** by exposing message formats that SQL can group and count, including rare formats that may be buried beneath more common events.
-- `SEMANTIC('message.content[*].content', 'native connector load failure')` answers **"Which formats are relevant?"** by matching their semantic meaning instead of requiring exact wording.
-
-These are not required steps. An agent can use any function independently or combine them.
-
-These operations run against CLP's deduplicated metadata rather than raw events, so their cost tracks the diversity of structures and messages rather than the total event count, keeping agent context compact at petabyte scale while staying linked back to exact evidence.
-
-CLP already records each extracted variable's type and position, but not necessarily its meaning. Future enrichment could label a value as a library path, symbol, filename, or job ID. A label applies to one variable position within a recurring format, so enrichment work follows the number of formats and variable positions rather than the number of events. Combined with structured identifiers already present in Uber logs, these labels could improve event grouping and correlation and provide evidence for anomaly detection, summarization, and root-cause-analysis pipelines.
-
-Wide-event enrichment goes further: combining logs with traces, the path one request takes across services, and metrics, aggregated measurements like latency or error rate, into a single, richer record for each request or operation. It also intensifies the schema problem: data sources and enrichment pipelines evolve independently, causing fields, nested structures, and value types to change over time. This is exactly the problem CLP solves by design. CLP can organize every observed structure without imposing a global schema, giving agents a connected view of what happened while retaining links to the exact underlying evidence.
-
-The following example combines metadata discovery, semantic matching, pattern enumeration, and labeled variables. When a user asks an agent to triage potential errors in the connector, the agent first calls `SCHEMA('message')` to find where the relevant text lives, then runs:
+All three consult metadata rather than data, so their cost tracks the number of distinct formats rather than the number of events. For example, asked to triage connector errors, an agent calls `SCHEMA('message')` to find where the relevant text lives, then runs:
 
 ```
 SELECT
@@ -143,9 +141,13 @@ GROUP BY PATTERN('message.content[*].content');
 | Connector factory **`%factory_name%`** was not registered | 19 |
 | Could not open shared object file **`%file_path%`** | 6 |
 
-Instead of reading 72 similar events, the agent sees three formats and their counts. Without this, "Could not open shared object file `%file_path%`," the rarest of the three at just 6 occurrences, would likely stay buried under the other 66 events. Labels such as `%library_path%` and `%symbol%` explain the roles of the changing values. The agent can then retrieve the exact events it needs. A wide event for the affected operation can also provide related transcript messages, tool calls, execution traces, and resource metrics, moving from a recurring pattern to its full execution context without separately discovering every source.
+A text search for `fail` or `error` would miss the third pattern entirely, since its message contains neither word, and a search broad enough to catch it would bury it. Grouped by pattern, the rare failure is a visible row, and the agent can retrieve exactly those six events.
 
-The underlying CLP structures already exist. We are refining and evaluating the interfaces and enrichment needed to expose them to agents across Uber and broader CLP workloads.
+The placeholders in that table, `%library_path%` rather than a bare type, come from CLP+, an experimental extension of CLP that tags each variable's role at ingestion from a regular expression per kind of value. Roles belong to formats rather than events, so the work stays small, and they let scattered events be tied together for correlation.
+
+The observability industry is heading the same direction under a name of its own. A **wide event**, as several platforms now call it, is one record per request or operation carrying the fields of its logs, its trace, and its metrics together. Uber has the pieces: [Jaeger](https://www.jaegertracing.io/) records a request's path across services as spans, [M3](https://m3db.io/) and a growing [OpenTelemetry](https://opentelemetry.io/) footprint collect its metrics, and the trace ID ties them, carried by spans and logs and by metrics when configured to. A wide event would join them once, at ingestion, so an agent reads one record instead of visiting three systems. Not every log has a trace or metric, and not every trace or metric has a log, so one record may carry three signals and the next only one. Records whose shape changes from one event to the next are exactly what CLP was built to absorb.
+
+CLP entered Uber to cut a bill. What it stores now is the shape of everything Uber logs, and that shape, not a new index, is what would let an agent see what happened without reading all of it.
 
 [^clp-part-i]: [“Reducing Logging Cost by Two Orders of Magnitude Using CLP”](https://www.uber.com/en-GB/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/) showed how streaming CLP compression reduced storage and SSD writes for Spark logs and pointed to familiar SQL access through Presto as a next step.
 
