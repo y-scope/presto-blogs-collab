@@ -1,4 +1,4 @@
-![CLP and Presto connector banner](figures/clp-connector-collaboration-cover-21x9-v13.png)
+![CLP and Presto connector banner](figures/clp-part-iii-cover.png)
 
 # Bringing Native SQL to Petabyte-Scale Semi-Structured Logs: Uber's Logging Infrastructure with Presto and CLP (Part III)
 
