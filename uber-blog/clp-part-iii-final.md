@@ -40,7 +40,7 @@ There are more powerful UDFs that CLP can expose to leverage CLP's native; for e
 
 Figure 1 shows the architecture of Uber's logging infrastructure and the life cycle of a log along its two paths, ingestion and search.
 
-![Uber's CLP logging infrastructure showing the ingestion and search paths sharing a metastore and object storage](figures/clp-system-overview-sketch.svg)
+![Uber's CLP logging infrastructure showing the ingestion and search paths sharing a metastore and object storage](figures/clp-part-iii-figure-1-system-overview.png)
 
 *Figure 1: System overview of Uber's logging infrastructure*
 
@@ -74,7 +74,7 @@ Recall that Presto turns a query into a plan of steps executed top to bottom. Fo
 
 Our CLP connector intervenes in those first two steps. During split generation it applies two tiers of optimization, top-level filtering and TopN early termination, that use metastore metadata to avoid opening files at all. During table scan it applies a third, CLP-native vectorized execution, to read as little as possible from each file it does open. Figure 2 shows where each sits in the plan.
 
-![CLP connector optimizations mapped onto the Presto query plan](figures/clp-search-optimization-sketch.svg)
+![CLP connector optimizations mapped onto the Presto query plan](figures/clp-part-iii-figure-2-search-optimization.png)
 
 *Figure 2: CLP connector optimizations in the Presto query plan*
 
