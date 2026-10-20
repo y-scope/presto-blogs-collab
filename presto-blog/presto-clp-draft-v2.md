@@ -1,24 +1,28 @@
 # The Pluggable CLP Connector for Presto Native: Specialized Storage for Semi-Structured Data
 
-## Introduction
+# Introduction
 
-A data lake stores files in inexpensive object storage. A **lakehouse** adds a table layer, such as Apache Iceberg, so query engines such as Presto can read those files as SQL tables. This lets multiple engines share data, but it leaves a choice: how should that data be organized inside the files?
+For decades, data had to earn its way into a centralized warehouse: it was fitted to a schema designed in advance and queried by the warehouse’s dedicated engine. As data exploded in volume and variety, the cost and rigidity of this schema-on-write model just could not scale accordingly. Enterprises began pouring data into cheap data lakes instead, where raw data lands in open formats such as Parquet. However, a lake alone only stores the data, it offers no data management for analytics. So the lakehouse architecture was defined; it adds a metadata abstraction such as Apache Iceberg on top of data lake to organizes the Parquet files into tables, then query engines such as Presto can query those tables directly, as they would a warehouse.
 
-That choice matters for semi-structured data such as logs. A record’s **schema**—its field names and types—can vary: an error might be a number in one record, a message in another, and a nested object in a third. These variations make efficient storage and search harder.
+The lakehouse’s promise is one copy of data that any engine can read and write, and this promise has proven increasingly valuable. On the same Parquet files, users can run SQL queries for BI, or load the files as Arrow tables into ML frameworks such as Ray for model training. What the lakehouse leaves open is whether the physical layout beneath those tables should be unified as well. Our answer is no: a common table interface does not require a common physical layout, and a query engine can read each kind of data in the layout that fits it.
 
-**Columnar storage** groups values from the same field together, allowing queries to read relevant columns and compress similar values efficiently. Parquet’s Variant type accommodates changing record structures, but only selected fields and types get this columnar treatment. CLP (Compressed Log Processor) takes a different approach: it groups records by schema to keep every record in typed columns, with additional encodings for compressing and searching recurring text.
+Take semi-structured data as an example. Each semi-structured record can carry its own schema: a field present in one record may be missing from another, or hold a value of a different type. Such data, mostly logs, metrics, and traces produced for observability, makes up a large share of what lands in a data lake. At Uber, roughly 25 PB of semi-structured data is produced every month.
 
-The next step is to query this storage layout through SQL. **Presto is the query engine**: it plans queries and distributes work across machines. The CLP **connector** lets that engine read CLP’s columns and use its compressed-search capabilities.
+The lakehouse’s answer for semi-structured data is Parquet Variant, a data type for values whose fields are not known in advance. A Variant column stores each semi-structured record in binary, encoded with field names, types, and values. Reading one field therefore requires decoding each row’s binary value, unless the field has been shredded, i.e., extracted into its own typed Parquet column. However, shredding requires configuring those fields before a file is written, which is impractical when the schema of semi-structured logs is inherently dynamic. Moreover, as of this writing, Presto’s native Iceberg support does not yet read Variant end to end; Iceberg v3 Variant reading is tracked upstream.
 
-We worked with the Presto community to make this connector independently loadable in Presto Native, which executes queries in C++ workers. It now ships as a separate plugin package, replacing an integration that required maintaining modified engine code.
+We propose CLP as a first-class format for semi-structured data in the data lake because it stores logs’ evolving fields in columns format without the manual configuration that Variant shredding requires. CLP does so by discovering each record’s structure at ingestion and grouping records that share a schema into tables for columnar look up. Like Parquet, CLP is an open format, but it takes much less space in object storage. CLP achieves a compression ratio 2.31X higher on average than the best Parquet configuration evaluated, while supporting search directly on the compressed data. For full lakehouse support, YScope’s CLP package manages CLP format into tables, as Iceberg does for Parquet files, and we have built a Presto CLP connector that lets Presto query those tables. YScope’s August 2025 blog describes the connector in detail.
 
-CLP is the first connector to use this architecture end to end; the required changes shipped in Presto 0.299. At Uber, this architecture stores about a petabyte of semi-structured data per day in CLP at roughly 30:1 compression, with thousands of Presto queries daily.
+With the storage side in place, how do we make CLP accessible to Presto on the compute side? Traditionally, the Presto accepted only in-tree connectors, i.e., connectors compiled into its source tree, such as Presto’s Iceberg connector. However, an in-tree connector is a long-term investment: Iceberg’s has taken over five years and roughly 900 commits, and is still growing. We raised this with the Presto community, and together we designed a plugin architecture: the connector ships as a separate artifact, and load it at runtime from a configured plugin directory. Presto CLP connector is the first connector to use it end to end; the required changes at PrestoDB upstream shipped in Presto 0.299 so that any connector can use them.
 
-We first compare how Variant and CLP organize and search the same records, then explain file selection, deployment, and the plugin design. A shared SQL interface can support storage formats specialized for different workloads.
+This architecture is already deployed in production at Uber, where a petabyte a day of semi-structured data are stored in CLP at about 30:1 compression and queried through Presto with thousands of SQL per day. The rest of this blog compares Parquet Variant and CLP, explains the technical details of the plugin, and describes how Uber adopted CLP in its lakehouse architecture.
 
 ## Variant in the Lakehouse Landscape
 
-Variant lets one SQL column hold values with different structures and types. Consider a `logs` table whose Variant column, `event`, contains these three records:
+In the lakehouse, **Variant support** can mean support for a SQL type, a table-schema type, or a file encoding. These layers have different responsibilities: understanding Variant values in a query engine does not determine how they are stored or how the engine reads them.
+
+SQL engines generally require each output column to have a known type before execution. Semi-structured data complicates this: the same field might contain an integer, a string, or an object across different records. Variant provides one SQL type that can hold these different values while preserving their individual types.
+
+Consider a `logs` table with a Variant column named `event`. Each complete JSON object below is stored as one value in that column, one per table row. The `timestamp` and `error` fields are inside `event`, not separate table columns:
 
 ```jsonl
 {"timestamp": "2026-10-19T12:00:00Z", "error": 504}
@@ -28,23 +32,25 @@ Variant lets one SQL column hold values with different structures and types. Con
 
 Three layers make these records queryable:
 
-1. **Query-engine layer.** The engine provides operations to access Variant fields. In Databricks SQL, `:` accesses a field:
+1. **Query-engine layer.** Variant is a SQL type, with operations to access its fields. In Databricks SQL, `:` accesses a field:
 
    ```sql
    SELECT event:error AS error FROM logs;
    ```
 
-   SQL engines generally need to know each output column’s type before execution. Here, that type is Variant: each result preserves its integer, string, or object value. Without a type that accommodates this variation, the query would need conversion to a common type or produce a type error.
+   The output column is Variant: the three results retain their integer, string, and object types without being coerced into strings.
 
-2. **Table layer.** Iceberg tracks the table’s schema and files. [Iceberg v3](https://iceberg.apache.org/spec/#semi-structured-types) lets the schema declare `event` as Variant without listing its internal fields. Those fields can change without changing the declared table schema.
+2. **Table layer.** [Iceberg v3](https://iceberg.apache.org/spec/#semi-structured-types) records that `logs` has an `event` column of type Variant and tracks which files belong to the table. The connector exposes that column to the engine; the declaration does not list the fields inside each event.
 
-3. **File-format layer.** Parquet typically stores the data. Its [binary Variant representation](https://parquet.apache.org/docs/file-format/types/variantencoding/) encodes each record’s structure, types, and values, alongside a dictionary of field names.
+3. **File-format layer.** Parquet defines the [binary representation](https://parquet.apache.org/docs/file-format/types/variantencoding/) of Variant values. The Parquet writer can extract fields into typed columns (“shredding”), and the reader reconstructs requested Variant values for the engine. Where supported, the connector passes filters to the reader so it can skip irrelevant data.
 
-Together, these layers support dynamic records through a declared table schema. Binary Variant avoids parsing JSON text at query time, but extracting a field across many records can still be slow: the reader must navigate every relevant record’s binary value.
+Together, these layers support dynamic records through a declared table schema, but Iceberg and Parquet are choices, not requirements for engine-level Variant support. An engine can expose Variant values through other table and storage formats. The CLP connector provides access to CLP’s tables and specialized scans, independently of whether the engine supports Variant.
+
+For Parquet, binary Variant avoids parsing JSON text at query time, but extracting a field across many records can still be slow: the reader must navigate every relevant record’s binary value.
 
 [Shredding](https://parquet.apache.org/docs/file-format/types/variantshredding/) addresses this bottleneck by extracting selected fields into typed Parquet columns. Queries can then read those columns directly, skip irrelevant data using column statistics, and benefit from columnar compression.
 
-Each field has only one shredded type per file. Shredding `error` as an integer puts `504` in a typed column; the string and object stay in the row-based binary fallback. Returning all three requires both representations, preserving their original types.
+Each field has only one shredded type per file. Shredding `error` as an integer puts `504` in an integer column. The string and object errors cannot fit that column, so they remain encoded as binary Variant values. Returning all three requires reading both the integer column and those binary values, preserving their original types.
 
 The Parquet writer selects fields and types through [configuration or inference from sampled data](https://parquet.apache.org/blog/2026/02/27/variant-type-in-apache-parquet-for-semi-structured-data/). Changing those selections for an existing file requires rewriting it. The remaining challenge is to keep every record columnar as fields and types change.
 
@@ -68,21 +74,21 @@ Meta’s [Nimble](https://github.com/facebookincubator/nimble), an alternative t
 
 ## From Predicate to Physical Scan: Parquet Variant and CLP
 
-A **predicate** is a condition such as `error = 504`; a **scan** reads the stored data needed to evaluate it. The format determines which columns or binary values the reader must examine.
+The storage layout determines which columns or binary values the engine must read to evaluate a predicate.
 
-Log analysis is a common use case for semi-structured data. For example, troubleshooting a failure may start with an error code or message pattern, before the field path is known. The code might appear at `error.code`, `response.error.code`, or `upstream.error.code`. Wildcard-path matching searches across these locations. Support depends on the query engine; the file format determines what it must read. The table compares that work for engines implementing these searches:
+Log analysis is a common use case for semi-structured data. For example, troubleshooting a failure may start with an error code or message pattern, before the field path is known. The code might appear at `error.code`, `response.error.code`, or `upstream.error.code`. Wildcard-path matching searches across these locations. Support depends on the query engine; the file format determines what it must read. The table compares that work using illustrative predicates over fields within `event`, with `504` matched as an integer:
 
-| Search condition | Parquet Variant | CLP |
+| Predicate | Parquet Variant | CLP |
 |---|---|---|
-| `error` is the integer `504` | Read its integer column if shredded; otherwise inspect binary values. | Automatically use the schema map to locate and scan matching integer columns. |
-| Integer `504` at a path matching `*.error.*` | Scan matching shredded integer columns. For unshredded data, read field names from Variant metadata and traverse each relevant record’s binary structure to match paths and integer types; then retrieve those integer values and compare them with `504`. | Automatically find integer columns whose paths match `*.error.*` in the schema map, then scan only those columns for `504`. |
-| Messages matching `request … timed out` | Apply wildcard or regex matching to string values (or whole-string dictionary entries when supported). Variant neither stores nor exposes string templates. | Match string shapes in the dictionary, then scan the integer ID column for matching shape IDs; check variable values when needed. |
+| `error = 504` | Read its integer column if shredded; otherwise inspect binary values. | Automatically use the schema map to locate and scan matching integer columns. |
+| `*.error.* = 504` | Scan matching shredded integer columns. For unshredded data, read field names from Variant metadata and traverse each relevant record’s binary structure to match paths and integer types; then retrieve those integer values and compare them with `504`. | Automatically match `*.error.*` and integer types in the archive-wide MST, identify the ERTs containing those fields, then scan their integer columns for `504`. |
+| `message LIKE 'request % timed out'` | Apply wildcard or regex matching to string values (or whole-string dictionary entries when supported). Variant neither stores nor exposes string templates. | Match string shapes in the dictionary, then scan the integer ID column for matching shape IDs; check variable values when needed. |
 
-For a known, shredded field, both formats can scan typed columns. CLP makes columnar access available across observed paths and types, while string shapes help narrow text searches. These advantages matter when schemas change, field locations are unknown, and messages repeat; stable schemas and mostly unique text offer less benefit.
+**CLP keeps dynamic records columnar across schema shapes; Parquet Variant’s field-level columnar access depends on shredding.** When all queried fields and types are [fully shredded](https://parquet.apache.org/docs/file-format/types/variantshredding/), both formats support direct typed-column scans.
 
-The connector currently supports cross-field value search. Broader wildcard key/path support is being prepared for open-source release; the table describes the archive format’s capability.
+For wildcard paths, CLP’s archive-wide MST identifies matching fields and the ERTs containing them before reading record values. The scan then reads only the relevant columns, avoiding the per-record path discovery required for unshredded Variant fields.
 
-The connector brings these scan capabilities into Presto. Archive metadata narrows the work inside each file; next, we look at how the metastore reduces the number of files to read.
+For string patterns, Parquet readers may need to test every remaining string value or [whole-string dictionary entry](https://parquet.apache.org/docs/file-format/data-pages/encodings/#dictionary-encoding-plain_dictionary--2-and-rle_dictionary--8), after any applicable pruning. CLP first matches shared string shapes, then scans integer shape IDs and checks variables as needed. This can replace repeated text matching with integer comparisons even when messages contain different variable values.
 
 ## Beyond File Pruning: Leveraging Metastore and CLP Metadata
 
