@@ -130,14 +130,15 @@ JOIN clp.default.trip_service_logs AS l       -- CLP
 WHERE t.datestr = '2026-10-16'
   AND t.city_id = 1
   AND t.status = 'FAILED'
-  AND CLP_GET_BIGINT('timestamp') >= 1792108800000   -- 2026-10-16, epoch ms
-  AND CLP_GET_BIGINT('response.status_code') >= 500  -- HTTP 5xx: server errors
+  AND CLP_GET_BIGINT('timestamp') >= 1792108800000   -- 2026-10-16 UTC, epoch ms
+  AND CLP_GET_BIGINT('timestamp') < 1792195200000    -- 2026-10-17 UTC, epoch ms
+  AND CLP_GET_BIGINT('response.status_code') BETWEEN 500 AND 599  -- HTTP 5xx
   AND CLP_GET_STRING('message') LIKE 'request % timed out'
 GROUP BY 1
 ORDER BY errors DESC;
 ```
 
-Presto plans the two sides separately. The Hive connector reads `trips` from Parquet and prunes partitions by `datestr`. The CLP connector reads `trip_service_logs`, a table with no declared schema. `CLP_GET_STRING` and `CLP_GET_BIGINT` name each field by its JSON path and type, yet CLP still reads each field from its own column. All three predicates are pushed down to CLP, where each filters out irrelevant data by leveraging a different kind of metadata at a different granularity: `timestamp` is checked against each archive's time range, `response.status_code` filters out ERTs whose schema lacks that field, and `message` filters out string shapes that do not match the pattern. Presto then joins the two sides on `trip_id` and aggregates as usual. Neither table is copied or converted; each stays in the layout that fits it.
+Presto plans the two sides separately. The Hive connector reads `trips` from Parquet and prunes partitions by `datestr`. The CLP connector reads `trip_service_logs`, a table with no declared schema. `CLP_GET_STRING` and `CLP_GET_BIGINT` name each field by its JSON path and type, yet CLP still reads each field from its own column. The time-range, status-code, and message filters are pushed down to CLP, where each filters out irrelevant data by leveraging a different kind of metadata at a different granularity: `timestamp` is checked against each archive's time range, `response.status_code` filters out ERTs whose schema lacks that field, and `message` filters out string shapes that do not match the pattern. Presto then joins the two sides on `trip_id` and aggregates as usual. Neither table is copied or converted; each stays in the layout that fits it.
 
 The CLP side of this deployment runs on five Presto worker nodes that read directly from object storage. It serves hundreds of weekly active users and thousands of queries per day, with a mean response time of roughly two seconds; 99% of queries complete within 26 seconds. These queries are not small: a query may span 30 days of logs, i.e., hundreds of gigabytes that a naive engine would scan in full.
 
