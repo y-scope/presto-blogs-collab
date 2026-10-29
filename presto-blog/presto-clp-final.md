@@ -20,7 +20,7 @@ This architecture is already deployed in production at Uber, where a petabyte a 
 
 ## Row-Wise Access in Parquet Variant for Semi-Structured Data, and Why Shredding Falls Short
 
-Lakehouses support semi-structured data through Variant; however, the underlying file format, such as Parquet, can hold back Variant's performance because it makes field access row-wise. Variant is a SQL type that can hold an integer, a string, or an object in the same column. To make Variant accessible in a lakehouse, the support must encompass three layers: a query engine such as Presto, a table format such as Iceberg, and a file format such as Parquet.
+Lakehouses support semi-structured data through Variant; however, the underlying file format, such as Parquet, can hold back Variant's performance because it makes field access row-wise. Variant is a SQL type that can hold an integer, a string, or an object in the same column. To make Variant accessible in a lakehouse, the support must encompass three layers: a query engine with Variant support, a table format such as Iceberg, and a file format such as Parquet.
 
 ![Four JSON records whose error field holds an integer, a string, or an object](images/presto-clp-figure-1-json-records.svg)
 
