@@ -52,7 +52,7 @@ Compared with storing semi-structured data in Parquet, CLP offers three advantag
 
 - **Schema-less ingestion.** CLP discovers every field and its type as data is ingested without requiring the schema in advance or selecting fields as Variant shredding does.
 - **Columnar storage and search.** Every field, popular or rare, is stored as a typed column. A search scans only the columns it needs, directly from the encoded data.
-- **High compression.** A high compression ratio directly translates to lower storage cost in the data lake. CLP is a state-of-the-art compressor for semi-structured data, averaging 68.1:1, so a petabyte shrinks to about 15 TB. In [YScope's Log Archival Bench](https://blog.yscope.com/log-archival-bench-a-framework-for-comparing-log-archival-analytics-tools-160e98b9d189), its compression ratio is 2.31× that of the best Parquet configuration evaluated.
+- **High compression.** A high compression ratio directly translates to lower storage cost in the data lake. CLP is a state-of-the-art compressor for semi-structured data, averaging 68.1:1 in our [OSDI '24 evaluation](https://www.usenix.org/system/files/osdi24-wang-rui.pdf), so a petabyte shrinks to about 15 TB at that ratio. In [YScope's Log Archival Bench](https://blog.yscope.com/log-archival-bench-a-framework-for-comparing-log-archival-analytics-tools-160e98b9d189), its compression ratio is 2.31× that of the best Parquet configuration evaluated.
 
 Below, we use Figure 3 to explain at a high level how CLP achieves these advantages. For more details, please see our [OSDI '24 paper](https://www.usenix.org/conference/osdi24/presentation/wang-rui).
 
@@ -80,7 +80,7 @@ The cost of the same query can differ greatly depending on how the data is store
 
 In summary, the gap comes from how natively each format supports semi-structured data. Parquet is columnar, but within a Variant column only the shredded fields are; the rest are read row-wise. CLP stores every observed field as a typed column, so not only do all the searches above stay columnar, but much irrelevant data is also filtered out by the archives' metadata and the ERTs.
 
-Parquet's limitations are well known, and CLP is not the only format designed to address them. Meta's [Nimble](https://github.com/facebookincubator/nimble), built as a replacement for Parquet, takes a related approach. Its [nested data streams](https://velox-lib.io/blog/nimble-stream-slicing/#nested-stream-mapping) need not have the same element count as the table's row count. However, Nimble targets a different workload. It is designed for wide datasets with thousands of columns, extensible encodings, and highly parallel hardware. Semi-structured data is not among its design goals.
+Parquet's limitations are well known, and CLP is not the only format designed to address them. Meta's [Nimble](https://github.com/facebookincubator/nimble), built as a replacement for Parquet, takes a related approach. Its [nested data streams](https://velox-lib.io/blog/nimble-stream-slicing/#nested-stream-mapping) need not have the same element count as the table's row count. However, Nimble targets a different workload. It is designed for wide datasets with thousands of columns, extensible encodings, and highly parallel hardware.
 
 ## A Plugin Path for Presto Native Connectors
 
@@ -142,7 +142,7 @@ Presto plans the two sides separately. The Hive connector reads `trips` from Par
 
 The CLP side of this deployment runs on five Presto worker nodes that read directly from object storage. It serves hundreds of weekly active users and thousands of queries per day, with a mean response time of roughly two seconds; 99% of queries complete within 26 seconds. These queries are not small: a query may span 30 days of logs, i.e., hundreds of gigabytes that a naive engine would scan in full.
 
-Five nodes are enough because most of that data is never read. Across a 30-day production window, the connector cut the data examined by more than 200,000×. Three tiers of optimization make this possible, outlined briefly below:
+Five nodes are enough because most of that data is never read. Across a 30-day production window, the connector cut the number of records examined by more than 200,000×. Three tiers of optimization make this possible, outlined briefly below:
 
 - **Metastore pruning.** Ingestion records per-file metadata, such as time range and service, in a relational metastore. Predicates that match this metadata, e.g., the `timestamp` bound above, prune files before any of them is opened.
 - **TopN early termination.** Many queries are investigative and ask only for the N most recent events. For eligible queries, the metastore's per-file event counts let the connector open only the newest files needed to reach N, plus any older file whose time range still overlaps theirs.
