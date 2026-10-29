@@ -46,37 +46,35 @@ The other two layers, the table format and the query engine, build on top of the
 
 ### Parquet Shredding and Its Limitations
 
-Shredding extracts selected Variant fields into typed Parquet columns, with the aim of enabling efficient column scans, better compression, and data skipping. But realizing those query performance gains requires more than changing the storage layout. The query must express the intended types, and the engine must translate it into direct column access.
+Shredding aims to make field access columnar by extracting selected Variant fields into typed Parquet columns. The writer selects those fields through [configuration or inference](https://parquet.apache.org/blog/2026/02/27/variant-type-in-apache-parquet-for-semi-structured-data/), and each field can only have one shredded type per file. Shredding `error` as an integer leaves its string and object values in binary form. Reading all values requires both representations. Changing existing files’ layouts requires rewriting them.
 
-The Parquet writer selects a shredding schema through configuration or inference, and each field can only have one shredded type per file. Shredding `error` as an integer puts `504` in an integer column, while the string and object errors remain in binary Variant values. Unexpected fields and types also remain in binary form, and changing the shredding policy does not reorganize existing files.
-
-Reading all values of `error` therefore requires both representations. Even a seemingly integer-only search can require both.
+Even a seemingly integer-only search can require both representations. Consider a `logs` table with a Variant column named `event`. In DuckDB:
 
 ```sql
 SELECT * FROM logs WHERE event.error::INT = 504;
 ```
 
-In DuckDB, `::INT` is shorthand for `CAST(... AS INTEGER)`. It requests conversion, so strings and floating-point values may also convert to `504`, while incompatible values can cause an error. To match only values stored as 64-bit integers, users must explicitly check the type.
+The cast also accepts strings and floating-point values that convert to `504`, and can fail on incompatible values. Users can explicitly restrict matches to stored 64-bit integers:
 
 ```sql
 SELECT * FROM logs WHERE variant_typeof(event.error) = 'INT64' AND event.error = 504::VARIANT;
 ```
 
-Other platforms make this restriction harder to express. [Trino's Variant API](https://trino.io/docs/current/functions/variant.html) has no equivalent built-in type-inspection function. A cast-based search has the same conversion problem.
+This controls matching, but does not guarantee scanning only the shredded column. [DuckDB can bypass Variant reconstruction](https://github.com/duckdb/duckdb/blob/main/extension/parquet/parquet_reader.cpp#L984) for fully shredded fields when conversion semantics permit. Applying such optimizations requires optimizer and reader support.
+
+Other engines offer fewer options. [Trino’s Variant API](https://trino.io/docs/current/functions/variant.html) lacks an equivalent type-inspection function. Casting permits conversion:
 
 ```sql
 SELECT * FROM logs WHERE TRY_CAST(event['error'] AS INTEGER) = 504;
 ```
 
-Comparing Variant values directly avoids casting the field, but still matches numerically equal integers, decimals, and floating-point values.
+Direct comparison still matches numerically equal integers, decimals, and floating-point values:
 
 ```sql
 SELECT * FROM logs WHERE event['error'] = CAST(504 AS VARIANT);
 ```
 
-Neither Trino expression restricts the search to stored integers. Even when users can express that restriction, as in DuckDB, scanning only the shredded column requires optimizer and reader support. [DuckDB can bypass Variant reconstruction](https://github.com/duckdb/duckdb/blob/main/extension/parquet/parquet_reader.cpp#L984) for fully shredded fields when conversion semantics permit, but an explicit type check alone does not guarantee that optimization.
-
-CLP groups records by schema and stores their fields in typed columns as schemas evolve, without selecting only certain fields and types for shredding. Presto does not yet provide an engine-level Variant type, so the CLP plugin currently exposes typed access and search through bundled UDFs that the connector translates into specialized scans. We hope future Variant support in Presto makes typed searches easier to express and enables their pushdown into shredded Parquet columns and CLP's native columns alike.
+We hope future Variant support in Presto makes typed searches easier to express and enables their pushdown into shredded columns.
 
 ## CLP: Schema-Free Ingestion, Columnar Storage, and High Compression
 
