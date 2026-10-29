@@ -1,6 +1,6 @@
 # One Lakehouse, Many Layouts: Plugging CLP into Presto
 
-We describe how [CLP](https://github.com/y-scope/clp) brings efficient analytics to semi-structured data stored in the data lake, as part of a lakehouse solution provided by YScope. CLP automatically discovers schemas at ingestion, keeps every field queryable through columnar scans, and compresses data more than twice as well as Parquet. We also present a new plugin architecture for Presto connectors, which we have deployed at Uber to process a petabyte of logs daily with just five Presto workers.
+We describe how [CLP](https://github.com/y-scope/clp) brings efficient analytics to semi-structured data stored in the data lake, as part of a lakehouse solution provided by YScope. CLP automatically discovers schemas at ingestion, keeps every field queryable through columnar scans, and compresses data more than twice as well as Parquet. We also present a new plugin architecture for Presto connectors, which we have deployed at Uber to query a growing archive of logs ingested at a petabyte per day, with just five Presto workers.
 
 ## Introduction
 
@@ -151,7 +151,7 @@ Five nodes are enough because most of that data is never read. Across a 30-day p
 
 The lakehouse promises a unified interface to data, but that does not require a unified storage format. While Parquet excels at structured data, CLP is purpose-built for semi-structured data. By automatically discovering schemas at ingestion, storing every field in typed columns, and achieving more than twice Parquet's compression ratio, CLP enables more efficient storage and analytics without sacrificing the flexibility of the lakehouse architecture.
 
-Our integration with Presto demonstrates two important advances. First, **CLP can complement Parquet in the same lakehouse**, allowing each type of data to use the storage format best suited to it while remaining accessible through SQL. Uber's production deployment shows this approach at scale, processing a petabyte of logs daily and serving thousands of queries a day with just five Presto workers.
+Our integration with Presto demonstrates two important advances. First, **CLP can complement Parquet in the same lakehouse**, allowing each type of data to use the storage format best suited to it while remaining accessible through SQL. Uber's production deployment shows this approach at scale, storing a petabyte of logs daily and serving thousands of queries a day with just five Presto workers.
 
 Second, **Presto Native now supports out-of-tree connectors as runtime plugins**, eliminating the need to integrate new connectors into the Presto and Velox source trees. CLP is the first connector to use this architecture end to end, but the capability is available to the broader Presto community, making it easier to bring new storage formats and data sources into the Presto ecosystem.
 
