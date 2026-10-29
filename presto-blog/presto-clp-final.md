@@ -145,7 +145,7 @@ The CLP side of this deployment runs on five Presto worker nodes that read direc
 Five nodes are enough because most of that data is never read. Across a 30-day production window, the connector cut the data examined by more than 200,000×. Three tiers of optimization make this possible, outlined briefly below:
 
 - **Metastore pruning.** Ingestion records per-file metadata, such as time range and service, in a relational metastore. Predicates that match this metadata, e.g., the `timestamp` bound above, prune files before any of them is opened.
-- **TopN early termination.** Many queries are investigative and ask only for the N most recent events. For these queries, the metastore's per-file event counts let the connector open only the newest files needed to reach N, plus any older file whose time range still overlaps theirs.
+- **TopN early termination.** Many queries are investigative and ask only for the N most recent events. For eligible queries, the metastore's per-file event counts let the connector open only the newest files needed to reach N, plus any older file whose time range still overlaps theirs.
 - **CLP-native pruning.** Within each opened CLP archive, CLP skips tables whose schema cannot match, e.g., tables without a `status_code` field, checks its dictionaries before scanning rows, and materializes only the matching rows into Velox vectors for vectorized execution.
 
 ## Conclusion
