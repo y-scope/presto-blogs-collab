@@ -20,7 +20,7 @@ This architecture is already deployed in production at Uber, where a petabyte a 
 
 ## Row-Wise Access in Parquet Variant for Semi-Structured Data, and Why Shredding Falls Short
 
-Lakehouses support semi-structured data through Variant; however, the underlying file format, such as Parquet, can hold back Variant's performance because it makes field access row-wise. Variant is a SQL type that can hold an integer, a string, or an object in the same column. To make Variant accessible in a lakehouse, the support must encompass three layers: a query engine with Variant support, a table format such as Iceberg, and a file format such as Parquet.
+Lakehouses support semi-structured data through Variant; however, the underlying file format, such as Parquet, can hold back Variant's performance because access to unshredded fields remains row-wise. Variant is a SQL type that can hold an integer, a string, or an object in the same column. To make Variant accessible in a lakehouse, the support must encompass three layers: a query engine with Variant support, a table format such as Iceberg, and a file format such as Parquet.
 
 ![Four JSON records whose error field holds an integer, a string, or an object](images/presto-clp-figure-1-json-records.svg)
 
@@ -32,7 +32,7 @@ Consider the four JSON records in Figure 1. In a lakehouse table, they are store
 
 *Figure 2: Record 3 from Figure 1 encoded as a Parquet Variant, in two parts, `metadata` and `value`. `metadata` is the record's dictionary of field names. Its header (blue) holds the version and the number of names. Its offsets (green) mark where each name starts in the payload (orange), and a last offset gives the payload size. The position of the field name in the payload is treated as its ID. For instance, the `error` field's ID is 1 because it is positioned at index 1 in the payload. `value` holds a Variant value, whose layout depends on its type. An object's header (blue) holds the type and the number of fields. Its field IDs (purple) are sorted by the names of the fields, and each is linked to a matching offset (green) that marks where that field's value starts in the payload; a last offset gives the payload size. Its payload (orange) holds the field values consecutively, each itself a Variant value. A scalar is a one-byte header (blue) followed by its payload (orange). The header, drawn in binary, gives the type in its low 2 bits and, in its high 6 bits, either a short string's length or a primitive's type, which fixes the payload length.*
 
-The table's underlying file format is often Parquet. Figure 2 shows how Parquet stores a Variant, which makes field access row-wise. Consider reading `error.code` from record 3:
+The table's underlying file format is often Parquet. Figure 2 shows how Parquet stores an unshredded Variant, where field access is row-wise. Consider reading `error.code` from record 3:
 
 1. Read the header of `value`, which says the record is an object with two fields.
 2. Search the object's field IDs for `error`. The IDs are sorted by field name, so the reader binary-searches them, resolving each probed ID to its name through `metadata`. `error` is ID 1, in the first slot.
