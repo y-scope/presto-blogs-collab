@@ -1,6 +1,6 @@
 # One Lakehouse, Many Layouts: Plugging CLP into Presto
 
-We describe how [CLP](https://github.com/y-scope/clp) brings efficient analytics to semi-structured data stored in the data lake, as part of a lakehouse solution provided by YScope. CLP automatically discovers schemas at ingestion, keeps every field queryable through columnar scans, and compresses data more than twice as well as Parquet. We also present a new plugin architecture for Presto connectors, which we have deployed at Uber to query a growing archive of logs ingested at a petabyte per day, with just five Presto workers.
+We describe how [CLP](https://github.com/y-scope/clp) brings efficient analytics to semi-structured data stored in the data lake, as part of a lakehouse solution provided by YScope. CLP automatically discovers schemas at ingestion, keeps every field queryable through columnar scans, and compresses data more than twice as well as Parquet in our benchmark. We also present a new plugin architecture for Presto connectors, which we have deployed at Uber to query a growing archive of logs ingested at a petabyte per day, with just five Presto workers.
 
 ## Introduction
 
@@ -75,7 +75,7 @@ The cost of the same query can differ greatly depending on how the data is store
 | Illustrative predicate | Parquet Variant | CLP |
 | --- | --- | --- |
 | `error = 504` | Row-wise unless `error` is shredded as an integer: look up `error` in each record's binary value, then compare it with `504`. | Strictly columnar: locate the ERTs with integer columns of `error` in the schema tree, then scan only those columns for `504`, skipping every ERT without integer `error`. |
-| `message LIKE 'request % timed out'` | Row-wise unless `message` is shredded: look up `message` in each record's binary value, then match the pattern against it. Even if shredded, Parquet's dictionary holds whole strings, so pattern matching operates on **distinct messages in the dictionaries being searched**, e.g., `request 9f2c1e7a timed out`, `request 3b7d0a41 timed out`, and so on. | Strictly columnar: locate the ERTs with `message` columns in the schema tree, match the pattern against **string shapes in the archive's dictionary**, e.g., `request <var> timed out`, then scan only those columns for matching shape IDs. |
+| `error LIKE 'request % timed out'` | Row-wise unless `error` is shredded as a string: look up `error` in each record's binary value, then match the pattern against it. Even if shredded, Parquet's dictionary holds whole strings, so pattern matching operates on **distinct messages in the dictionaries being searched**, e.g., `request 9f2c1e7a timed out`, `request 3b7d0a41 timed out`, and so on. | Strictly columnar: locate the ERTs with string columns of `error` in the schema tree, match the pattern against **string shapes in the archive's dictionary**, e.g., `request <var> timed out`, then scan only those columns for matching shape IDs. |
 | `*.error.* = 504` | Columnar and row-wise: locate the shredded columns whose paths match `*.error.*` and scan them for `504`, then traverse every record's binary value, since unshredded data may hold other matching paths. | Strictly columnar: resolve the ERTs that have columns matching `*.error.*` in the schema tree, then scan only those columns for `504`. |
 
 In summary, the gap comes from how natively each format supports semi-structured data. Parquet is columnar, but within a Variant column only the shredded fields are; the rest are read row-wise. CLP stores every observed field as a typed column, so not only do all the searches above stay columnar, but much irrelevant data is also filtered out by the archives' metadata and the ERTs.
@@ -150,7 +150,7 @@ Five nodes are enough because most of that data is never read. Across a 30-day p
 
 ## Conclusion
 
-The lakehouse promises a unified interface to data, but that does not require a unified storage format. While Parquet excels at structured data, CLP is purpose-built for semi-structured data. By automatically discovering schemas at ingestion, storing every field in typed columns, and achieving more than twice Parquet's compression ratio, CLP enables more efficient storage and analytics without sacrificing the flexibility of the lakehouse architecture.
+The lakehouse promises a unified interface to data, but that does not require a unified storage format. While Parquet excels at structured data, CLP is purpose-built for semi-structured data. By automatically discovering schemas at ingestion, storing every field in typed columns, and achieving more than twice Parquet's compression ratio in our benchmark, CLP enables more efficient storage and analytics without sacrificing the flexibility of the lakehouse architecture.
 
 Our integration with Presto demonstrates two important advances. First, **CLP can complement Parquet in the same lakehouse**, allowing each type of data to use the storage format best suited to it while remaining accessible through SQL. Uber's production deployment shows this approach at scale, storing a petabyte of logs daily and serving thousands of queries a day with just five Presto workers.
 
