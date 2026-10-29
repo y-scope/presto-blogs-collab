@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 912" width="1000" height="912" role="img" aria-labelledby="title desc">
+<title id="title">The CLP connector as a plugin in a Presto Native cluster</title>
+<desc id="desc">A SQL client sends a query to the Presto coordinator. The CLP coordinator plugin, loaded as a JAR, reads tables and splits from the metadata database of the CLP package, which manages CLP archives as Iceberg manages Parquet files. The coordinator sends each of many Presto Native workers its plan fragment and splits as JSON, in which every CLP handle is binary-serialized by CLP's codec and carried as Base64 in customSerializedValue. On each worker, the CLP plugin, loaded from a shared library, decodes the bytes and calls clp-s, which both compresses logs into CLP archives and scans them, to read archives directly from the data lake. Result pages return through the coordinator.</desc>
+<defs>
+<marker id="arr-ink" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker>
+<marker id="arr-amber" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b45309"/></marker>
+<marker id="arr-teal" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f766e"/></marker>
+<linearGradient id="water" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e0f2fe"/><stop offset="1" stop-color="#b9e0f7"/></linearGradient>
+</defs>
+<rect x="0" y="0" width="1000" height="912" fill="#ffffff"/>
+<rect x="748" y="30" width="18" height="18" rx="4" fill="#fffbeb" stroke="#b45309" stroke-width="1.6" />
+<text x="775" y="44" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#92400e" text-anchor="start" >Provided by</text>
+<g transform="translate(861.11,27.97) scale(0.1102)"><path d="M90.7,168.1v-51.1L44.4,41.2l14.4-8.4,40.3,67.4,41.1-68.2,15.4,9.2-46.7,75.8v51.1h-18.2Z" fill="#1888fa"/></g>
+<text x="885" y="44" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" >YScope</text>
+<path d="M20,750 C32.0,745.5 32.0,745.5 44.0,750 C56.0,754.5 56.0,754.5 68,750 C80.0,745.5 80.0,745.5 92.0,750 C104.0,754.5 104.0,754.5 116,750 C128.0,745.5 128.0,745.5 140.0,750 C152.0,754.5 152.0,754.5 164,750 C176.0,745.5 176.0,745.5 188.0,750 C200.0,754.5 200.0,754.5 212,750 C224.0,745.5 224.0,745.5 236.0,750 C248.0,754.5 248.0,754.5 260,750 C272.0,745.5 272.0,745.5 284.0,750 C296.0,754.5 296.0,754.5 308,750 C320.0,745.5 320.0,745.5 332.0,750 C344.0,754.5 344.0,754.5 356,750 C368.0,745.5 368.0,745.5 380.0,750 C392.0,754.5 392.0,754.5 404,750 C416.0,745.5 416.0,745.5 428.0,750 C440.0,754.5 440.0,754.5 452,750 C464.0,745.5 464.0,745.5 476.0,750 C488.0,754.5 488.0,754.5 500,750 C512.0,745.5 512.0,745.5 524.0,750 C536.0,754.5 536.0,754.5 548,750 C560.0,745.5 560.0,745.5 572.0,750 C584.0,754.5 584.0,754.5 596,750 C608.0,745.5 608.0,745.5 620.0,750 C632.0,754.5 632.0,754.5 644,750 C656.0,745.5 656.0,745.5 668.0,750 C680.0,754.5 680.0,754.5 692,750 C704.0,745.5 704.0,745.5 716.0,750 C728.0,754.5 728.0,754.5 740,750 C752.0,745.5 752.0,745.5 764.0,750 C776.0,754.5 776.0,754.5 788,750 C800.0,745.5 800.0,745.5 812.0,750 C824.0,754.5 824.0,754.5 836,750 C848.0,745.5 848.0,745.5 860.0,750 C872.0,754.5 872.0,754.5 884,750 C896.0,745.5 896.0,745.5 908.0,750 C920.0,754.5 920.0,754.5 932,750 C944.0,745.5 944.0,745.5 956.0,750 C968.0,754.5 968.0,754.5 980,750 L980,868 Q980,894 954,894 L46,894 Q20,894 20,868 Z" fill="url(#water)" stroke="none"/>
+<path d="M20,750 C32.0,745.5 32.0,745.5 44.0,750 C56.0,754.5 56.0,754.5 68,750 C80.0,745.5 80.0,745.5 92.0,750 C104.0,754.5 104.0,754.5 116,750 C128.0,745.5 128.0,745.5 140.0,750 C152.0,754.5 152.0,754.5 164,750 C176.0,745.5 176.0,745.5 188.0,750 C200.0,754.5 200.0,754.5 212,750 C224.0,745.5 224.0,745.5 236.0,750 C248.0,754.5 248.0,754.5 260,750 C272.0,745.5 272.0,745.5 284.0,750 C296.0,754.5 296.0,754.5 308,750 C320.0,745.5 320.0,745.5 332.0,750 C344.0,754.5 344.0,754.5 356,750 C368.0,745.5 368.0,745.5 380.0,750 C392.0,754.5 392.0,754.5 404,750 C416.0,745.5 416.0,745.5 428.0,750 C440.0,754.5 440.0,754.5 452,750 C464.0,745.5 464.0,745.5 476.0,750 C488.0,754.5 488.0,754.5 500,750 C512.0,745.5 512.0,745.5 524.0,750 C536.0,754.5 536.0,754.5 548,750 C560.0,745.5 560.0,745.5 572.0,750 C584.0,754.5 584.0,754.5 596,750 C608.0,745.5 608.0,745.5 620.0,750 C632.0,754.5 632.0,754.5 644,750 C656.0,745.5 656.0,745.5 668.0,750 C680.0,754.5 680.0,754.5 692,750 C704.0,745.5 704.0,745.5 716.0,750 C728.0,754.5 728.0,754.5 740,750 C752.0,745.5 752.0,745.5 764.0,750 C776.0,754.5 776.0,754.5 788,750 C800.0,745.5 800.0,745.5 812.0,750 C824.0,754.5 824.0,754.5 836,750 C848.0,745.5 848.0,745.5 860.0,750 C872.0,754.5 872.0,754.5 884,750 C896.0,745.5 896.0,745.5 908.0,750 C920.0,754.5 920.0,754.5 932,750 C944.0,745.5 944.0,745.5 956.0,750 C968.0,754.5 968.0,754.5 980,750" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linejoin="round"/>
+<rect x="50" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="52" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="65.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="108" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="110" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="123.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="166" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="168" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="181.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="224" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="226" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="239.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="282" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="284" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="297.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="340" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="342" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="355.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="398" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="400" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="413.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="456" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="458" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="471.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="514" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="516" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="529.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="572" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="574" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="587.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="630" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="632" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="645.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<rect x="688" y="786" width="44" height="11" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="1.5" />
+<rect x="690" y="797" width="40" height="23" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="1.5" />
+<rect x="703.0" y="804" width="14" height="4" rx="2" fill="#b45309" stroke="#b45309" stroke-width="0" />
+<text x="752" y="810" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#92400e" text-anchor="start" >CLP archives</text>
+<text x="44" y="868" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#075985">Data lake<tspan font-size="15" font-weight="400" fill="#0c4a6e"> · object storage</tspan></text>
+<rect x="20" y="100" width="680" height="610" rx="16" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="7 5"/>
+<text x="40" y="130" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#334155" text-anchor="start" >Presto cluster</text>
+<rect x="270" y="18" width="180" height="52" rx="10" fill="#f1f5f9" stroke="#475569" stroke-width="1.6" />
+<text x="292" y="50" font-family="'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="16" font-weight="700" fill="#475569" text-anchor="start" >&gt;_</text>
+<text x="324" y="50" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0f172a" text-anchor="start" >SQL client</text>
+<path d="M340,70 L340,122" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr-ink)"/>
+<path d="M380,124 L380,72" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr-ink)"/>
+<text x="330" y="93" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="500" fill="#475569" text-anchor="end" >Query</text>
+<text x="390" y="93" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="500" fill="#475569" text-anchor="start" >Results</text>
+<rect x="200" y="124" width="320" height="152" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2" />
+<text x="220" y="155" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#1e3a8a" text-anchor="start" >Coordinator</text>
+<text x="502" y="155" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#2563eb" text-anchor="end" >Presto Java</text>
+<text x="220" y="179" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#334155" text-anchor="start" >Planner · optimizer · scheduler</text>
+<rect x="218" y="193" width="284" height="66" rx="9" fill="#fffbeb" stroke="#b45309" stroke-width="1.6" />
+<text x="234" y="220" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#92400e" text-anchor="start" >CLP coordinator plugin</text>
+<text x="234" y="244" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="400" fill="#78350f" text-anchor="start" >Java plugin (.jar)</text>
+<path d="M360,276 L360,322" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="150" y="322" width="420" height="156" rx="10" fill="#ffffff" stroke="#334155" stroke-width="1.5" />
+<path d="M150,356 L150,332 Q150,322 160,322 L560,322 Q570,322 570,332 L570,356 Z" fill="#f1f5f9" stroke="none"/>
+<path d="M150,356 L570,356" fill="none" stroke="#cbd5e1" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="166" y="344" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" >Plan fragment + splits</text>
+<text x="166" y="376" font-family="'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" font-weight="400" fill="#334155" text-anchor="start" >"connectorSplit": {</text>
+<text x="186" y="398" font-family="'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" font-weight="400" fill="#334155" text-anchor="start" >"@type": "clp",</text>
+<text x="186" y="420" font-family="'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" font-weight="400" fill="#334155" text-anchor="start" >"customSerializedValue":</text>
+<rect x="200" y="428" width="178" height="24" rx="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2" />
+<text x="207" y="445" font-family="'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" font-weight="600" fill="#92400e" text-anchor="start" >"AB5zMzovL2xha2Uv…"</text>
+<text x="166" y="468" font-family="'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" font-weight="400" fill="#334155" text-anchor="start" >}</text>
+<path d="M386,440 L398,440" fill="none" stroke="#b45309" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="404" y="436" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#92400e" text-anchor="start" >Binary bytes from</text>
+<text x="404" y="454" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#92400e" text-anchor="start" >CLP's codec, Base64</text>
+<path d="M360,478 L360,510" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M135.0,510 L585.0,510" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M135.0,510 L135.0,536" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr-ink)"/>
+<path d="M345.0,510 L345.0,536" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr-ink)"/>
+<path d="M585.0,510 L585.0,536" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr-ink)"/>
+<path d="M135.0,746 L135.0,680" fill="none" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr-teal)"/>
+<path d="M345.0,746 L345.0,680" fill="none" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr-teal)"/>
+<path d="M585.0,746 L585.0,680" fill="none" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr-teal)"/>
+<path d="M60,538 L60,226 L198,226" fill="none" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 5" marker-end="url(#arr-teal)"/>
+<text x="68" y="404" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#0f766e" text-anchor="start" >Result</text>
+<text x="68" y="421" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#0f766e" text-anchor="start" >pages</text>
+<rect x="40" y="538" width="190" height="140" rx="12" fill="#f0fdfa" stroke="#0f766e" stroke-width="2" />
+<text x="56" y="568" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#134e4a" text-anchor="start" >Worker 1</text>
+<text x="56" y="592" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#334155" text-anchor="start" >Presto Native (C++)</text>
+<rect x="50" y="606" width="170" height="58" rx="8" fill="#fffbeb" stroke="#b45309" stroke-width="1.6" />
+<text x="62" y="630" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#92400e" text-anchor="start" >CLP worker plugin</text>
+<text x="62" y="652" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#78350f" text-anchor="start" >Velox plugin (.so)</text>
+<rect x="250" y="538" width="190" height="140" rx="12" fill="#f0fdfa" stroke="#0f766e" stroke-width="2" />
+<text x="266" y="568" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#134e4a" text-anchor="start" >Worker 2</text>
+<text x="266" y="592" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#334155" text-anchor="start" >Presto Native (C++)</text>
+<rect x="260" y="606" width="170" height="58" rx="8" fill="#fffbeb" stroke="#b45309" stroke-width="1.6" />
+<text x="272" y="630" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#92400e" text-anchor="start" >CLP worker plugin</text>
+<text x="272" y="652" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#78350f" text-anchor="start" >Velox plugin (.so)</text>
+<rect x="490" y="538" width="190" height="140" rx="12" fill="#f0fdfa" stroke="#0f766e" stroke-width="2" />
+<text x="506" y="568" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#134e4a" text-anchor="start" >Worker N</text>
+<text x="506" y="592" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#334155" text-anchor="start" >Presto Native (C++)</text>
+<rect x="500" y="606" width="170" height="58" rx="8" fill="#fffbeb" stroke="#b45309" stroke-width="1.6" />
+<text x="512" y="630" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" fill="#92400e" text-anchor="start" >CLP worker plugin</text>
+<text x="512" y="652" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#78350f" text-anchor="start" >Velox plugin (.so)</text>
+<text x="465" y="614" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#134e4a" text-anchor="middle" >···</text>
+<rect x="730" y="380" width="250" height="310" rx="14" fill="#fffbeb" stroke="#b45309" stroke-width="2" />
+<text x="750" y="412" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#92400e" text-anchor="start" >CLP package</text>
+<text x="750" y="436" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#78350f" text-anchor="start" >Manages CLP archives,</text>
+<text x="750" y="455" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#78350f" text-anchor="start" >as Iceberg manages Parquet</text>
+<rect x="742" y="474" width="226" height="78" rx="8" fill="#ffffff" stroke="#d97706" stroke-width="1.5" />
+<text x="756" y="500" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#92400e" text-anchor="start" >Metadata database</text>
+<text x="756" y="521" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#334155" text-anchor="start" >Tables · archives ·</text>
+<text x="756" y="540" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#334155" text-anchor="start" >time ranges</text>
+<rect x="742" y="596" width="226" height="78" rx="8" fill="#ffffff" stroke="#d97706" stroke-width="1.5" />
+<text x="756" y="622" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#92400e" text-anchor="start" >clp-s</text>
+<text x="756" y="643" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#334155" text-anchor="start" >Compresses logs into archives</text>
+<text x="756" y="662" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#334155" text-anchor="start" >Scans archives for queries</text>
+<path d="M672,635 L738,635" fill="none" stroke="#b45309" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 4" marker-end="url(#arr-amber)"/>
+<path d="M746,513 L620,513 L620,226 L505,226" fill="none" stroke="#b45309" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr-amber)"/>
+<text x="630" y="300" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="600" fill="#b45309" text-anchor="start" >Tables</text>
+<text x="630" y="318" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="600" fill="#b45309" text-anchor="start" >&amp; splits</text>
+</svg>
