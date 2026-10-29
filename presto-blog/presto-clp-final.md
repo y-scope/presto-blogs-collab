@@ -90,7 +90,7 @@ The Presto coordinator was already able to load connectors as plugins through it
 
 We brought this problem to the Presto community. [RFC-0019](https://github.com/prestodb/rfcs/pull/49), proposed by Tim Meehan, describes the design that decouples the CLP worker connector from Presto Native. The worker loads connectors from shared libraries at startup, and the coordinator sends each plugin connector's handles as bytes that only the plugin can decode. We implemented the worker side and built CLP as the first connector to use this path end to end. The changes shipped in Presto 0.299.
 
-Below, we first show how to add the CLP connector to an existing Presto cluster as a plugin, and then explain the protocol of how the two halves communicate.
+Below, we first show the settings for loading the CLP connector as a plugin, and then explain the protocol of how the two halves communicate.
 
 ### Configuring the Connector as a Plugin
 
