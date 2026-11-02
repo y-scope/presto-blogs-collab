@@ -116,7 +116,7 @@ With `use-connector-provided-serialization-codecs` enabled, the coordinator seri
 
 ![Plugin architecture of the Presto CLP connector, from the SQL client through the coordinator and workers to CLP archives in the data lake](images/presto-clp-figure-4-plugin-architecture.svg)
 
-*Figure 4: The plugin architecture of the Presto CLP connector, together with the end-to-end flow of YScope's lakehouse solution for CLP. All components are open source. The highlighted CLP components are provided by YScope.*
+*Figure 4: The plugin architecture of the Presto CLP connector, together with the end-to-end flow of YScope's lakehouse solution for CLP. All components are open source. The CLP components in orange are provided by YScope, and the highlighted line traces the plugin path.*
 
 ## Uber Deployment
 
