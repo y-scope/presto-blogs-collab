@@ -4,7 +4,7 @@ We describe how [CLP](https://github.com/y-scope/clp) brings efficient analytics
 
 ## Introduction
 
-For decades, data had to earn its way into a centralized warehouse: it had to be fitted to a schema designed in advance and locked in a proprietary format, leaving it queryable only by the warehouse's dedicated engine. As data exploded in volume and variety, such cost and rigidity of the warehouses could not scale accordingly. Enterprises began pouring data into cheap data lakes instead, where raw data lands in open file formats such as Parquet. However, a lake alone only stores the data; it offers no data management for analytics. To fill this gap, the lakehouse architecture was defined: it adds a table format, i.e., a metadata abstraction such as Apache Iceberg, on top of the data lake to organize the Parquet files into tables, such that query engines like Presto can query those tables directly, as they would a warehouse.
+For decades, data had to earn its way into a centralized warehouse: it had to be fitted to a schema designed in advance and locked in a proprietary format, leaving it queryable only by the warehouse's dedicated engine. As data exploded in volume and variety, such cost and rigidity of the warehouses could not scale accordingly. Enterprises began pouring data into cheap data lakes instead, where raw data lands in open file formats such as Parquet. However, a lake alone only stores the data; it offers no data management for analytics. To fill this gap, the lakehouse architecture was defined: it adds a table format, i.e., a metadata abstraction such as Apache Iceberg, on top of the data lake to organize the Parquet files into tables, so that query engines like Presto can query those tables directly, as they would a warehouse.
 
 The lakehouse's promise is one copy of data that any engine can read and write. On the same Parquet files, users can run SQL queries for business intelligence, or load the files as Arrow tables into ML frameworks such as Ray for model training. What the lakehouse leaves open is whether the file format beneath those tables should be unified as well. We believe the answer is rather contrary: a common table interface does not require a common file format, and a query engine can read each kind of data in the format that fits it.
 
@@ -44,13 +44,13 @@ Across records, an unshredded field remains embedded in individual binary values
 
 Shredding addresses this limitation by extracting selected Variant fields into typed Parquet columns, enabling columnar scans, compression, and data skipping. But **shredding a field does not necessarily make all its values columnar**. The Parquet writer selects fields and types through [configuration or inference](https://parquet.apache.org/blog/2026/02/27/variant-type-in-apache-parquet-for-semi-structured-data/), and each field can only have one shredded type per file. Shredding `error` as an integer puts `504` in a typed column, but leaves its string and object values in binary form. Queries accessing those values still require per-record navigation, and reading the complete field requires both representations.
 
-Columnar coverage therefore depends on how well the selected shredding schema covers the data. As records introduce fields and types outside that schema, those values remain in the binary representation. CLP takes a fundamentally different approach by grouping records according to their observed schemas.
+Columnar coverage therefore depends on how well the selected shredding schema matches the data. As records introduce fields and types outside that schema, those values remain in the binary representation. CLP takes a fundamentally different approach by grouping records according to their observed schemas.
 
 ## CLP: Schema-Free Ingestion, Columnar Storage, and High Compression
 
 Compared with storing semi-structured data in Parquet, CLP offers three advantages:
 
-- **Schema-less ingestion.** CLP discovers every field and its type as data is ingested without requiring the schema in advance or selecting fields as Variant shredding does.
+- **Schema-less ingestion.** CLP discovers every field and its type as data is ingested, without requiring a schema in advance or selecting fields as Variant shredding does.
 - **Columnar storage and search.** Every field, popular or rare, is stored as a typed column. A search scans only the columns it needs, directly from the encoded data.
 - **High compression.** A high compression ratio directly translates to lower storage cost in the data lake. CLP is a state-of-the-art compressor for semi-structured data, averaging 68.1:1 in our [OSDI '24 evaluation](https://www.usenix.org/system/files/osdi24-wang-rui.pdf), so a petabyte shrinks to about 15 TB at that ratio.
 
@@ -146,7 +146,7 @@ The CLP side of this deployment runs on five Presto worker nodes that read direc
 
 Five nodes are enough because most of that data is never read. Across a 30-day production window, the connector cut the number of records examined by more than 200,000×. Three tiers of optimization make this possible, outlined briefly below:
 
-- **Metastore pruning.** Ingestion records per-file metadata, such as time range and service, in a relational metastore. Predicates that match this metadata, e.g., the `timestamp` bound above, prune files before any of them is opened.
+- **Metastore pruning.** Ingestion records per-file metadata, such as time range and service, in a relational metastore. Predicates that match this metadata, e.g., the `timestamp` bounds above, prune files before any of them is opened.
 - **TopN early termination.** Many queries are investigative and ask only for the N most recent events. For eligible queries, the metastore's per-file event counts let the connector open only the newest files needed to reach N, plus any older file whose time range still overlaps theirs.
 - **CLP-native pruning.** Within each opened CLP archive, CLP skips tables whose schema cannot match, e.g., tables without a `status_code` field, checks its dictionaries before scanning rows, and materializes only the matching rows into Velox vectors for vectorized execution.
 
