@@ -158,7 +158,7 @@ Our integration with Presto demonstrates two important advances. First, **CLP ca
 
 Second, **Presto Native now supports out-of-tree connectors as runtime plugins**, eliminating the need to integrate new connectors into the Presto and Velox source trees. CLP is the first connector to use this architecture end to end, but the capability is available to the broader Presto community, making it easier to bring new storage formats and data sources into the Presto ecosystem.
 
-And it's coming to the cloud: the lakehouse solution in this post is now in trial on [CLP Cloud](https://yscope.com/clp-cloud) and will launch as a product soon.
+Want to try it out? Check out YScope's [CLP Cloud](https://yscope.com/clp-cloud).
 
 ---
 
