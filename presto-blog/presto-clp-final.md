@@ -142,6 +142,8 @@ ORDER BY errors DESC;
 
 Presto plans the two sides separately. The Hive connector reads `trips` from Parquet and prunes partitions by `datestr`. The CLP connector reads `trip_service_logs`, a table with no declared schema. `CLP_GET_STRING` and `CLP_GET_BIGINT` name each field by its JSON path and type, yet CLP still reads each field from its own column. The time-range, status-code, and message filters are pushed down to CLP, where each filters out irrelevant data by leveraging a different kind of metadata at a different granularity: `timestamp` is checked against each archive's time range, `response.status_code` filters out ERTs whose schema lacks that field, and `message` filters out string shapes that do not match the pattern. Presto then joins the two sides on `trip_id` and aggregates as usual. Neither table is copied or converted; each stays in the layout that fits it.
 
+Stored in CLP, the roughly 25 PB of logs produced at Uber each month occupy 750–850 TB in object storage, a 29:1 to 33:1 compression ratio, or roughly 97% less storage. New log events typically become queryable 30 seconds to a few minutes after they are emitted, fresh enough for failure diagnosis.
+
 The CLP side of this deployment runs on five Presto worker nodes that read directly from object storage. It serves hundreds of weekly active users and thousands of queries per day, with a mean response time of roughly two seconds; 99% of queries complete within 26 seconds. These queries are not small: a query may span 30 days of logs, i.e., hundreds of gigabytes that a naive engine would scan in full.
 
 Five nodes are enough because most of that data is never read. Across a 30-day production window, the connector cut the number of records examined by more than 200,000×. Three tiers of optimization make this possible, outlined briefly below:
@@ -149,6 +151,8 @@ Five nodes are enough because most of that data is never read. Across a 30-day p
 - **Metastore pruning.** Ingestion records per-file metadata, such as time range and service, in a relational metastore. Predicates that match this metadata, e.g., the `timestamp` bounds above, prune files before any of them is opened.
 - **TopN early termination.** Many queries are investigative and ask only for the N most recent events. For eligible queries, the metastore's per-file event counts let the connector open only the newest files needed to reach N, plus any older file whose time range still overlaps theirs.
 - **CLP-native pruning.** Within each opened CLP archive, CLP skips tables whose schema cannot match, e.g., tables without a `status_code` field, checks its dictionaries before scanning rows, and materializes only the matching rows into Velox vectors for vectorized execution.
+
+Because these tiers eliminate most work before it reaches the workers, each worker node typically uses only 5–10% of its 48 cores and 384 GB of RAM.
 
 ## Conclusion
 
