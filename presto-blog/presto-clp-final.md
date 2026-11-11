@@ -4,18 +4,18 @@
 
 **Contributors**
 
-- ChenXing Yang, YScope
-- Jack Luo, YScope
+- ChenXing Yang, Software Engineer, YScope
+- Jack Luo, Software Engineer, YScope
 - Jianjian Xie, Senior Software Engineer, Uber
 - Tim Meehan, Staff Software Engineer, Databricks
-- Devin Gibson, YScope
-- Rishikesh Devsot, YScope
-- Chaoyue Gong, YScope
-- Junhao Liao, YScope
-- Kirk Rodrigues, YScope
+- Devin Gibson, Software Engineer, YScope
+- Rishikesh Devsot, Software Engineer, YScope
+- Chaoyue Gong, Software Engineer, YScope
+- Junhao Liao, Software Engineer, YScope
+- Kirk Rodrigues, CTO, YScope
 - Ding Yuan, CEO, YScope and University of Toronto
 
-We describe how [CLP](https://github.com/y-scope/clp) brings efficient analytics to semi-structured data stored in the data lake, as part of a lakehouse solution provided by YScope. CLP automatically discovers schemas at ingestion, keeps every field queryable through columnar scans, and has achieved [much higher compression than the Parquet layouts we evaluated](https://blog.yscope.com/log-archival-bench-a-framework-for-comparing-log-archival-analytics-tools-160e98b9d189). At Uber, it reduces the logs' storage footprint by about 97%. We also present a new plugin architecture for Presto connectors, which we have deployed at Uber to query a growing archive of logs ingested at a petabyte per day, with just five Presto workers.
+We describe how [CLP](https://github.com/y-scope/clp) brings efficient analytics to semi-structured data stored in the data lake, as part of a lakehouse solution provided by YScope. CLP automatically discovers schemas at ingestion, keeps every field queryable through columnar scans, and has achieved [much higher compression than the Parquet file format in our evaluation](https://blog.yscope.com/log-archival-bench-a-framework-for-comparing-log-archival-analytics-tools-160e98b9d189). At Uber, it reduces the logs' storage footprint by about 97%. We also present a new plugin architecture for Presto connectors, which we have deployed at Uber to query a growing archive of logs ingested at a petabyte per day, with just five Presto workers.
 
 ## Introduction
 
@@ -27,7 +27,7 @@ Take semi-structured data, such as JSON, as an example. Each semi-structured rec
 
 The common answer to semi-structured data in the lakehouse is Parquet’s Variant type, which holds values whose fields are not known in advance. A Variant column stores each semi-structured record as binary, encoded with field names, types, and values. Reading one field therefore requires looking it up in every row's binary value, so the access is effectively row-wise, unless the field has been shredded, i.e., extracted into its own typed Parquet column. However, shredding requires selecting those fields through configuration or inference before the Parquet file is written, and this configuration tends to be conservative, so only the popular fields of semi-structured data are shredded and many cold fields remain row-wise.
 
-We propose [CLP](https://github.com/y-scope/clp) as a first-class format for semi-structured data in the data lake because it stores logs' evolving fields in columnar format without selecting fields and types for shredding. CLP does so by discovering each record's structure at ingestion and grouping records that share a schema into internal tables for columnar lookup. Like Parquet, CLP is an open format. It has achieved [much higher compression than the Parquet layouts we evaluated](https://blog.yscope.com/log-archival-bench-a-framework-for-comparing-log-archival-analytics-tools-160e98b9d189), while supporting search without full decompression. For full lakehouse support, YScope's [CLP package](https://github.com/y-scope/clp) organizes CLP archives into tables, as Iceberg does for Parquet files, and we have built a Presto CLP connector that lets Presto query those tables. [YScope's August 2025 blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) describes the connector in detail.
+We propose [CLP](https://github.com/y-scope/clp) as a first-class format for semi-structured data in the data lake because it stores logs' evolving fields in columnar format without selecting fields and types for shredding. CLP does so by discovering each record's structure at ingestion and grouping records that share a schema into internal tables for columnar lookup. Like Parquet, CLP is an open format. It has achieved [much higher compression than the Parquet file format in our evaluation](https://blog.yscope.com/log-archival-bench-a-framework-for-comparing-log-archival-analytics-tools-160e98b9d189), while supporting search without full decompression. For full lakehouse support, YScope's [CLP package](https://github.com/y-scope/clp) organizes CLP archives into tables, as Iceberg does for Parquet files, and we have built a Presto CLP connector that lets Presto query those tables. [YScope's Presto blog](https://blog.yscope.com/querying-clp-compressed-logs-with-prestosql-71dff29a0b82) describes the connector in detail.
 
 Making CLP accessible to Presto is only the first step. We also wanted it to be easy to deploy in production. The [Presto CLP connector](https://github.com/y-scope/clp-plugin-presto-connector) is the first connector loaded as a plugin at runtime by both Presto's Java coordinator and Presto Native, its C++ execution engine. Traditionally, Presto Native required connectors to be compiled into its source tree, as with Presto's Iceberg connector. However, an in-tree connector is a long-term investment: Iceberg's native support has taken almost three years and roughly 300 commits, and is still growing. We raised this with the Presto community, and together we designed a plugin architecture: the connector ships as a separate artifact, and Presto loads it at runtime from a configured plugin directory. The required changes to PrestoDB shipped in Presto 0.299 so that any connector may reuse them.
 
@@ -43,9 +43,9 @@ Lakehouses support semi-structured data through Variant; however, the underlying
 
 Consider the four JSON records in Figure 1. In a lakehouse table, they are stored as four rows of a single Variant column.
 
-![Record 3 encoded as a Parquet Variant, with the byte layouts of its metadata and value](images/presto-clp-figure-2-variant-encoding.svg)
+![Record 3 encoded as a Parquet Variant, with the byte-level encoding of its metadata and value](images/presto-clp-figure-2-variant-encoding.svg)
 
-*Figure 2: Record 3 from Figure 1 encoded as a Parquet Variant, in two parts, `metadata` and `value`. `metadata` is the record's dictionary of field names. Its header (blue) holds the version and the number of names. Its offsets (green) mark where each name starts in the payload (orange), and a last offset gives the payload size. The position of the field name in the payload is treated as its ID. For instance, the `error` field's ID is 1 because it is positioned at index 1 in the payload. `value` holds a Variant value, whose layout depends on its type. An object's header (blue) holds the type and the number of fields. Its field IDs (purple) are sorted by the names of the fields, and each is linked to a matching offset (green) that marks where that field's value starts in the payload; a last offset gives the payload size. Its payload (orange) holds the field values consecutively, each itself a Variant value. A scalar is a one-byte header (blue) followed by its payload (orange). The header, drawn in binary, gives the type in its low 2 bits and, in its high 6 bits, either a short string's length or a primitive's type, which fixes the payload length.*
+*Figure 2: Record 3 from Figure 1 encoded as a Parquet Variant, in two parts, `metadata` and `value`. `metadata` is the record's dictionary of field names. Its header (blue) holds the version and the number of names. Its offsets (green) mark where each name starts in the payload (orange), and a final offset gives the payload size. The position of the field name in the payload is treated as its ID. For instance, the `error` field's ID is 1 because it is positioned at index 1 in the payload. `value` holds a Variant value, whose encoding depends on its type. An object's header (blue) holds the type and the number of fields. Its field IDs (purple) are sorted by the names of the fields, and each is linked to a matching offset (green) that marks where that field's value starts in the payload; a final offset gives the payload size. Its payload (orange) holds the field values consecutively, each itself a Variant value. A scalar is a one-byte header (blue) followed by its payload (orange). The header, drawn in binary, gives the type in its low 2 bits and, in its high 6 bits, either a short string's length or a primitive's type, which fixes the payload length.*
 
 The table's underlying file format is often Parquet. Figure 2 shows how Parquet stores an unshredded Variant, where field access is row-wise. Consider reading `error.code` from record 3:
 
@@ -167,11 +167,11 @@ Five nodes are enough because most of that data is never read. Across a 30-day p
 
 ## Conclusion
 
-The lakehouse promises a unified interface to data, but that does not require a unified storage format. While Parquet excels at structured data, CLP is purpose-built for semi-structured data. By automatically discovering schemas at ingestion, storing every field in typed columns, and achieving high compression, CLP enables more efficient storage and analytics without sacrificing the flexibility of the lakehouse architecture.
+The lakehouse promises a unified interface to data, but that does not require a unified file format. While Parquet excels at structured data, CLP is purpose-built for semi-structured data. By automatically discovering schemas at ingestion, storing every field in typed columns, and achieving high compression, CLP enables more efficient storage and analytics without sacrificing the flexibility of the lakehouse architecture.
 
-Our integration with Presto demonstrates two important advances. First, **CLP can complement Parquet in the same lakehouse**, allowing each type of data to use the storage format best suited to it while remaining accessible through SQL. Uber's production deployment shows this approach at scale, storing a petabyte of logs daily and serving thousands of queries a day with just five Presto workers.
+Our integration with Presto demonstrates two important advances. First, **CLP can complement Parquet in the same lakehouse**, allowing each type of data to use the file format best suited to it while remaining accessible through SQL. Uber's production deployment shows this approach at scale, storing a petabyte of logs daily and serving thousands of queries a day with just five Presto workers.
 
-Second, **Presto Native now supports out-of-tree connectors as runtime plugins**, eliminating the need to integrate new connectors into the Presto and Velox source trees. CLP is the first connector to use this architecture end to end, but the capability is available to the broader Presto community, making it easier to bring new storage formats and data sources into the Presto ecosystem.
+Second, **Presto Native now supports out-of-tree connectors as runtime plugins**, eliminating the need to integrate new connectors into the Presto and Velox source trees. CLP is the first connector to use this architecture end to end, but the capability is available to the broader Presto community, making it easier to bring new file formats and data sources into the Presto ecosystem.
 
 Want to try it out? Check out the [Presto CLP connector](https://github.com/y-scope/clp-plugin-presto-connector). For an off-the-shelf lakehouse solution, visit YScope's [CLP Cloud](https://yscope.com/clp-cloud).
 
