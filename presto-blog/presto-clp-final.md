@@ -91,9 +91,9 @@ The cost of the same query can differ greatly depending on how the data is store
 
 | Illustrative predicate | Parquet Variant | CLP |
 | --- | --- | --- |
-| `error = 504` | Row-wise unless `error` is shredded as an integer: look up `error` in each record's binary value, then compare it with `504`. | Strictly columnar: locate the ERTs with integer columns of `error` in the schema tree, then scan only those columns for `504`, skipping every ERT without an integer `error`. |
-| `error LIKE 'request % timed out'` | Row-wise unless `error` is shredded as a string: look up `error` in each record's binary value, then match the pattern against it. Even if shredded, Parquet's dictionary holds whole strings, so pattern matching operates on **distinct messages in the dictionaries being searched**, e.g., `request 9f2c1e7a timed out`, `request 3b7d0a41 timed out`, and so on. | Strictly columnar: locate the ERTs with string columns of `error` in the schema tree, match the pattern against **string shapes in the archive's dictionary**, e.g., `request <var> timed out`, then scan only those columns for matching shape IDs. |
-| `*.error.* = 504` | Columnar and row-wise: locate the shredded columns whose paths match `*.error.*` and scan them for `504`, then traverse every record's binary value, since unshredded data may hold other matching paths. | Strictly columnar: resolve the ERTs that have columns matching `*.error.*` in the schema tree, then scan only those columns for `504`. |
+| `error = 504` | **Row-wise** unless `error` is shredded as an integer: look up `error` in each record's binary value, then compare it with `504`. | **Strictly columnar**: locate the ERTs with integer columns of `error` in the schema tree, then scan only those columns for `504`, skipping every ERT without an integer `error`. |
+| `error LIKE 'request % timed out'` | **Row-wise** unless `error` is shredded as a string: look up `error` in each record's binary value, then match the pattern against it. Even if `error` is shredded, Parquet's dictionaries hold whole strings, so pattern matching operates on **distinct messages in the dictionaries being searched**, e.g., `request 9f2c1e7a timed out`, `request 3b7d0a41 timed out`, and so on. | **Strictly columnar**: locate the ERTs with string columns of `error` in the schema tree, match the pattern against **string shapes in the archive's dictionary once**, e.g., `request <var> timed out`, then scan only those columns for matching shape IDs. |
+| `*.error.* = 504` | **Columnar and row-wise**: locate the shredded columns whose paths match `*.error.*` and scan them for `504`, then traverse every record's binary value, since unshredded data may hold other matching paths. | **Strictly columnar**: resolve the ERTs that have columns matching `*.error.*` in the schema tree, then scan only those columns for `504`. |
 
 In summary, the gap comes from how natively each format supports semi-structured data. Parquet is columnar, but within a Variant column only the shredded fields are; the rest are read row-wise. CLP stores every observed field as a typed column, so not only do all the searches above stay columnar, but much irrelevant data is also filtered out by the archives' metadata and the ERTs.
 
@@ -135,7 +135,7 @@ With `use-connector-provided-serialization-codecs` enabled, the coordinator seri
 
 ## Uber Deployment
 
-At Uber, semi-structured data is stored in CLP, while business data such as trips is stored in Parquet tables that Presto reads through its Hive connector. Because CLP is one more Presto catalog, a cluster configured with both catalogs can potentially join them in a single query. For example, to find which services returned errors for one day's failed trips in one city, an engineer can join the trip table with the services' logs:
+At Uber, semi-structured data is stored in CLP, while business data such as trips is stored in Parquet tables that Presto reads through its Hive connector. Because CLP is one more Presto catalog, a cluster configured with both catalogs can join them in a single query. For example, to find which services returned errors for one day's failed trips in one city, an engineer can join the trip table with the services' logs:
 
 ```sql
 SELECT
