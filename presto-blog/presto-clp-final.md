@@ -138,19 +138,25 @@ With `use-connector-provided-serialization-codecs` enabled, the coordinator seri
 At Uber, semi-structured data is stored in CLP, while business data such as trips is stored in Parquet tables that Presto reads through its Hive connector. Because CLP is one more Presto catalog, a cluster configured with both catalogs can join them in a single query. For example, to find which services returned errors for one day's failed trips in one city, an engineer can join the trip table with the services' logs:
 
 ```sql
+WITH logs AS (
+    SELECT
+        CLP_GET_STRING('trip_id') AS trip_id,
+        CLP_GET_STRING('service') AS service
+    FROM clp.default.trip_service_logs                   -- CLP
+    WHERE CLP_GET_BIGINT('timestamp') >= 1792108800000   -- 2026-10-16 UTC, epoch ms
+      AND CLP_GET_BIGINT('timestamp') < 1792195200000    -- 2026-10-17 UTC, epoch ms
+      AND CLP_GET_BIGINT('response.status_code') BETWEEN 500 AND 599  -- HTTP 5xx
+      AND CLP_GET_STRING('message') LIKE 'request % timed out'
+)
 SELECT
-    CLP_GET_STRING('service') AS service,
+    l.service,
     COUNT(*) AS errors
-FROM hive.rides.trips AS t                    -- Parquet
-JOIN clp.default.trip_service_logs AS l       -- CLP
-    ON CLP_GET_STRING('trip_id') = t.trip_id
+FROM hive.rides.trips AS t                               -- Parquet
+JOIN logs AS l
+    ON l.trip_id = t.trip_id
 WHERE t.datestr = '2026-10-16'
   AND t.city_id = 1
   AND t.status = 'FAILED'
-  AND CLP_GET_BIGINT('timestamp') >= 1792108800000   -- 2026-10-16 UTC, epoch ms
-  AND CLP_GET_BIGINT('timestamp') < 1792195200000    -- 2026-10-17 UTC, epoch ms
-  AND CLP_GET_BIGINT('response.status_code') BETWEEN 500 AND 599  -- HTTP 5xx
-  AND CLP_GET_STRING('message') LIKE 'request % timed out'
 GROUP BY 1
 ORDER BY errors DESC;
 ```
