@@ -5,15 +5,15 @@
 **Contributors**
 
 - ChenXing Yang, Software Engineer, YScope
-- Jack Luo, Software Engineer, YScope
+- Jack Luo, Co-founder, YScope
 - Jianjian Xie, Senior Software Engineer, Uber
 - Tim Meehan, Staff Software Engineer, Databricks
 - Devin Gibson, Software Engineer, YScope
 - Rishikesh Devsot, Software Engineer, YScope
 - Chaoyue Gong, Software Engineer, YScope
 - Junhao Liao, Software Engineer, YScope
-- Kirk Rodrigues, CTO, YScope
-- Ding Yuan, CEO, YScope and University of Toronto
+- Kirk Rodrigues, Co-founder, YScope
+- Ding Yuan, Co-founder, YScope and University of Toronto
 
 We describe how [CLP](https://github.com/y-scope/clp) brings efficient analytics to semi-structured data stored in the data lake, as part of a lakehouse solution provided by YScope. CLP automatically discovers schemas at ingestion, keeps every field queryable through columnar scans, and has achieved [much higher compression than the Parquet file format in our evaluation](https://blog.yscope.com/log-archival-bench-a-framework-for-comparing-log-archival-analytics-tools-160e98b9d189). At Uber, it reduces the logs' storage footprint by about 97%. We also present a new plugin architecture for Presto connectors, which we have deployed at Uber to query a growing archive of logs ingested at a petabyte per day, with just five Presto workers.
 
