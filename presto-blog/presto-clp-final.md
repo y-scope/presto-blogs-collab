@@ -53,7 +53,7 @@ The table's underlying file format is often Parquet. Figure 2 shows how Parquet 
 2. Search the object's field IDs for `error`. The IDs are sorted by field name, so the reader binary-searches them, resolving each probed ID to its name through `metadata`. `error` is ID 1, in the first slot.
 3. Read the offset in the same slot, 21, and jump to that position in the payload, where `error`'s value starts.
 4. Read `error`'s header, which says it is another object, and repeat steps 2 and 3 for `code`: ID 2, in the first slot, with offset 0.
-5. Read `code`'s header, which says it is a 2-byte integer, and decode the next two bytes: 504.
+5. Read `code`'s header, which says it is a 2-byte integer, and decode the next 2 bytes: 504.
 
 Across records, an unshredded field remains embedded in individual binary values. Reading `error.code` therefore requires locating and extracting its value record by record. This access remains row-wise, adding per-record navigation overhead compared with scanning a dedicated typed column.
 
@@ -92,7 +92,7 @@ The cost of the same query can differ greatly depending on how the data is store
 | Illustrative predicate | Parquet Variant | CLP |
 | --- | --- | --- |
 | `error = 504` | **Row-wise** unless `error` is shredded as an integer: look up `error` in each record's binary value, then compare it with `504`. | **Strictly columnar**: locate the ERTs with integer columns of `error` in the schema tree, then scan only those columns for `504`, skipping every ERT without an integer `error`. |
-| `error LIKE 'request % timed out'` | **Row-wise** unless `error` is shredded as a string: look up `error` in each record's binary value, then match the pattern against it. Even if `error` is shredded, Parquet's dictionaries hold whole strings, so pattern matching operates on **distinct messages in the dictionaries being searched**, e.g., `request 9f2c1e7a timed out`, `request 3b7d0a41 timed out`, and so on. | **Strictly columnar**: locate the ERTs with string columns of `error` in the schema tree, match the pattern against **string shapes in the archive's dictionary once**, e.g., `request <var> timed out`, then scan only those columns for matching shape IDs. |
+| `error LIKE 'request % timed out'` | **Row-wise** unless `error` is shredded as a string: look up `error` in each record's binary value, then match the pattern against it. Even if `error` is shredded, Parquet's dictionaries hold whole strings, so pattern matching operates on **distinct messages in the dictionaries being searched**, e.g., `request 9f2c1e7a timed out` and `request 3b7d0a41 timed out`. | **Strictly columnar**: locate the ERTs with string columns of `error` in the schema tree, match the pattern against **string shapes in the archive's dictionary once**, e.g., `request <var> timed out`, then scan only those columns for matching shape IDs. |
 | `*.error.* = 504` | **Columnar and row-wise**: locate the shredded columns whose paths match `*.error.*` and scan them for `504`, then traverse every record's binary value, since unshredded data may hold other matching paths. | **Strictly columnar**: resolve the ERTs that have columns matching `*.error.*` in the schema tree, then scan only those columns for `504`. |
 
 In summary, the gap comes from how natively each format supports semi-structured data. Parquet is columnar, but within a Variant column only the shredded fields are; the rest are read row-wise. CLP stores every observed field as a typed column, so not only do all the searches above stay columnar, but much irrelevant data is also filtered out by the archives' metadata and the ERTs.
@@ -105,7 +105,7 @@ Like many other Presto connectors, the CLP connector has two halves. The Presto 
 
 The Presto coordinator was already able to load connectors as plugins through its Java SPI. The Presto Native worker, however, required the connector's source code at compile time because 1) it needed to create the C++ structs and parsing logic for each connector's handles defined in Java classes, i.e., the objects that describe a table, its columns, and each split, and 2) it registered connector factories statically. As a result, a new format such as CLP could reach Presto Native only as an in-tree connector inside the Presto and Velox source trees. This is the path Iceberg's native support took, with more than 300 commits in Presto Native and Velox.
 
-We brought this problem to the Presto community. [RFC-0019](https://github.com/prestodb/rfcs/pull/49), proposed by Tim Meehan, describes the design that decouples the CLP worker connector from Presto Native. The worker loads connectors from shared libraries at startup, and the coordinator sends each plugin connector's handles as bytes that only the plugin can decode. We implemented the worker side and built CLP as the first connector to use this path end to end. The changes shipped in Presto 0.299.
+We brought this problem to the Presto community. [RFC-0019](https://github.com/prestodb/rfcs/pull/49), proposed by Tim Meehan, describes the design that decouples the CLP worker connector from Presto Native. The worker loads connectors from shared libraries at startup, and the coordinator sends each plugin connector's handles as bytes that only the plugin can decode. We implemented the worker side and built the CLP connector as the first to use this path end to end. The changes shipped in Presto 0.299.
 
 Below, we first show the settings for loading the CLP connector as a plugin, and then explain the protocol of how the two halves communicate.
 
@@ -171,7 +171,7 @@ The lakehouse promises a unified interface to data, but that does not require a 
 
 Our integration with Presto demonstrates two important advances. First, **CLP can complement Parquet in the same lakehouse**, allowing each type of data to use the file format best suited to it while remaining accessible through SQL. Uber's production deployment shows this approach at scale, storing a petabyte of logs daily and serving thousands of queries a day with just five Presto workers.
 
-Second, **Presto Native now supports out-of-tree connectors as runtime plugins**, eliminating the need to integrate new connectors into the Presto and Velox source trees. CLP is the first connector to use this architecture end to end, but the capability is available to the broader Presto community, making it easier to bring new file formats and data sources into the Presto ecosystem.
+Second, **Presto Native now supports out-of-tree connectors as runtime plugins**, eliminating the need to integrate new connectors into the Presto and Velox source trees. The CLP connector is the first to use this architecture end to end, but the capability is available to the broader Presto community, making it easier to bring new file formats and data sources into the Presto ecosystem.
 
 Want to try it out? Check out the [Presto CLP connector](https://github.com/y-scope/clp-plugin-presto-connector). For an off-the-shelf lakehouse solution, visit YScope's [CLP Cloud](https://yscope.com/clp-cloud).
 
