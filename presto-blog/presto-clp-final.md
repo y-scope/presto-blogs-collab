@@ -35,7 +35,7 @@ This architecture is already deployed in production at Uber, where a petabyte a 
 
 ## Row-Wise Access in Parquet Variant for Semi-Structured Data, and Why Shredding Falls Short
 
-Lakehouses support semi-structured data through Variant; however, the underlying file format, such as Parquet, can hold back Variant's performance because access to unshredded fields remains row-wise. Variant is a SQL type that can hold an integer, a string, or an object in the same column. To make Variant accessible in a lakehouse, the support must encompass three layers: a query engine such as Presto, a table format such as Iceberg, and a file format such as Parquet.
+Lakehouses support semi-structured data through Variant; however, the underlying file format, such as Parquet, can hold back Variant's performance because access to unshredded fields remains row-wise. Variant is a SQL type that can hold an integer, a string, or an object in the same column. To make Variant accessible in a lakehouse, support must encompass three layers: a query engine such as Presto, a table format such as Iceberg, and a file format such as Parquet.
 
 ![Four JSON records whose error field holds an integer, a string, or an object](images/presto-clp-figure-1-json-records.svg)
 
@@ -127,7 +127,7 @@ plugin.dir=/opt/presto-server/plugin/clp
 
 On the coordinator, the CLP plugin plans the query as other connectors do. It resolves tables, optimizes the plan, e.g., by converting the pushed-down predicates into a domain-specific language, and lists the splits, i.e., the CLP files the query must scan. Presto then sends each plan fragment and its splits to the Presto Native workers as JSON.
 
-With `use-connector-provided-serialization-codecs` enabled, the coordinator serializes each CLP handle, e.g., a split's file path and translated query, into bytes with CLP's own codec. In the resulting JSON, the handle is reduced to two fields. `@type` names the connector, here `clp`, and `customSerializedValue` holds those bytes, Base64-encoded.[^1] In contrast, an in-tree handle spells out every one of its fields in the JSON, and the worker can parse them only because matching C++ structs were compiled into Presto Native. On the worker, Presto Native reads `@type` and hands the bytes to the plugin registered under that name at startup, i.e., the CLP plugin. The worker's CLP plugin decodes the bytes and scans the split with the translated query through the Velox pipeline.[^2] Figure 4 summarizes this path.
+With `use-connector-provided-serialization-codecs` enabled, the coordinator serializes each CLP handle, e.g., a split's file path and translated query, into bytes with CLP's own codec. In the resulting JSON, the handle is reduced to two fields. `@type` names the connector, here `clp`, and `customSerializedValue` holds those bytes, Base64-encoded.[^1] In contrast, an in-tree handle spells out every one of its fields in the JSON, and the worker can parse them only because matching C++ structs were compiled into Presto Native. On the worker, Presto Native reads `@type` and hands the bytes to the plugin registered under that name at startup, i.e., the CLP plugin. The worker's CLP plugin decodes the bytes, scans the split with the translated query through the CLP engine, and then passes the results to the Velox pipeline.[^2] Figure 4 summarizes this path.
 
 ![Plugin architecture of the Presto CLP connector, from the SQL client through the coordinator and workers to CLP archives in the data lake](images/presto-clp-figure-4-plugin-architecture.svg)
 
